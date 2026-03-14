@@ -25,26 +25,23 @@ public class ModelViewerSelector extends VBox {
     private final Map<String, Object> locMap;
     private FilteredList<String> filteredModelList;
     private final Label statusLabel = new Label();
-    private final int LOAD_CHUNK_SIZE = 3600;
     private final ProgressBar loadingProgress = new ProgressBar(0);
-    private int loadedItemCount = 0;
 
     public ModelViewerSelector(ModelViewer modelViewer) {
         this.modelViewer = modelViewer;
         this.locMap = new HashMap<>();
 
+        ObservableList<String> locNames = FXCollections.observableArrayList();
+        this.filteredModelList = new FilteredList<>(locNames, p -> true);
+
+        setupUI();
+
         Platform.runLater(() -> {
             try {
                 this.locMap.putAll(FileLoader.getAllLocMap());
-
-                ObservableList<String> locNames = FXCollections.observableArrayList();
-                this.filteredModelList = new FilteredList<>(locNames, p -> true);
-
-                setupUI();
                 loadInitialItems();
             } catch (Exception e) {
                 System.err.println("Error initializing ModelViewerSelector: " + e.getMessage());
-                e.printStackTrace();
             }
         });
     }
@@ -82,90 +79,77 @@ public class ModelViewerSelector extends VBox {
             }
         });
 
-        loadingProgress.setMaxWidth(Double.MAX_VALUE);
-        loadingProgress.setVisible(false);
-
-        statusLabel.setText(String.format("Showing %d of %d models", 0, locMap.size()));
-
+        statusLabel.setText("Loading locs...");
         Label titleLabel = new Label("Loc Viewer");
         titleLabel.setStyle("-fx-font-weight: bold;");
 
-        getChildren().addAll(
-                titleLabel,
-                searchField,
-                modelListView,
-                statusLabel,
-                loadingProgress
-        );
+        getChildren().addAll(titleLabel, searchField, modelListView, statusLabel, loadingProgress);
     }
 
     private void loadInitialItems() {
+        if (locMap == null || locMap.isEmpty()) return;
+
+        List<String> sortedModels = new ArrayList<>(locMap.keySet());
+        Collections.sort(sortedModels);
+
         Platform.runLater(() -> {
-            try {
-                if (locMap != null && !locMap.isEmpty()) {
-                    List<String> sortedModels = new ArrayList<>(locMap.keySet());
-                    Collections.sort(sortedModels);
-
-                    List<String> initialChunk = sortedModels.subList(0,
-                            Math.min(LOAD_CHUNK_SIZE, sortedModels.size()));
-
-                    ObservableList<String> source = (ObservableList<String>) filteredModelList.getSource();
-                    source.clear();
-                    source.addAll(initialChunk);
-                    loadedItemCount = initialChunk.size();
-
-                    statusLabel.setText(String.format("Showing %d of %d locs",
-                            loadedItemCount, locMap.size()));
-                } else {
-                    statusLabel.setText("No loc data available");
-                }
-            } catch (Exception e) {
-                System.err.println("Error loading initial items: " + e.getMessage());
-                statusLabel.setText("Error loading loc data");
-            }
+            ObservableList<String> source = (ObservableList<String>) filteredModelList.getSource();
+            source.setAll(sortedModels);
+            statusLabel.setText(String.format("Showing %d locs", source.size()));
         });
     }
 
     public void updateModel(int shape){
-        loadSelectedModel(modelListView.getSelectionModel().getSelectedItem(), shape);
+        String selected = modelListView.getSelectionModel().getSelectedItem();
+        if (selected != null) {
+            loadSelectedModel(selected, shape);
+        }
     }
 
     private void loadSelectedModel(String locName, Integer shape) {
         int locId = -1;
-        for (Integer id : FileLoader.getLocMap().keySet()) {
-            if (FileLoader.getLocMap().get(id).equals(locName)) {
-                locId = id;
+        for (Map.Entry<Integer, String> entry : FileLoader.getLocMap().entrySet()) {
+            if (entry.getValue().equals(locName)) {
+                locId = entry.getKey();
                 break;
             }
         }
         if (locId != -1) {
             LocType loc = LocType.get(locId);
-            String target = loc.model;
-            Integer modelId = FileLoader.getModelMap().get(target);
-            if (modelId == null && shape != null) {
-                String shapeSuffix = SHAPE_SUFFIX_MAP.get(shape);
-                if (shapeSuffix != null) {
-                    modelId = FileLoader.getModelMap().get(target + shapeSuffix);
-                }
+            String modelBaseName = (loc.model != null) ? loc.model : locName;
+
+            String shapeSuffix = SHAPE_SUFFIX_MAP.get(shape);
+            Integer modelId = null;
+
+            if (shapeSuffix != null) {
+                modelId = FileLoader.getModelMap().get(modelBaseName + shapeSuffix);
             }
+
             if (modelId == null) {
-                modelId = findModelWithSuffix(target);
+                modelId = FileLoader.getModelMap().get(modelBaseName);
             }
+
+            if (modelId == null) {
+                modelId = findModelWithSuffix(modelBaseName);
+            }
+
             if (modelId != null) {
                 LocType locType = new LocType();
                 Model model = locType.getModel(modelId, 0, 0, 0, 0, 0, -1, 0, 0);
-                modelViewer.loadModel(model);
+                if (model != null) {
+                    modelViewer.loadModel(model);
+                }
             } else {
-                System.out.println("No model id " + target);
+                System.out.println("Could not find model for: " + modelBaseName + " (Shape: " + shape + ")");
             }
         }
     }
 
-    public void setFilter(String filter) {
-        searchField.setText(filter);
-    }
-
     public String getSelectedModel() {
         return modelListView.getSelectionModel().getSelectedItem();
+    }
+
+    public ListView<String> getModelListView() {
+        return this.modelListView;
     }
 }

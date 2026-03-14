@@ -72,51 +72,40 @@ public class LocType {
         loc = new LocType();
         String locName = FileLoader.getLocMap().get(id);
         loc.index = id;
-        if (FileLoader.getAllLocMap().containsKey(locName)) {
-            Map<String, Object> locData = (Map<String, Object>) FileLoader.getAllLocMap().get(locName);
+
+        Map<String, Object> locData = (Map<String, Object>) FileLoader.getAllLocMap().get(locName);
+        if (locData != null) {
             loc.name = (String) locData.getOrDefault("name", locName);
             loc.desc = (String) locData.get("desc");
             loc.model = (String) locData.get("model");
-            loc.wallwidth = (int) locData.get("wallwidth");
+            loc.wallwidth = (int) locData.getOrDefault("wallwidth", 16);
             loc.active = (Boolean) locData.getOrDefault("active", false);
-            loc.mapscene = (Integer) locData.getOrDefault("mapscene", 0);
+            loc.mapscene = (Integer) locData.getOrDefault("mapscene", -1);
+            loc.resizex = (Integer) locData.getOrDefault("resizex", 128);
+            loc.resizey = (Integer) locData.getOrDefault("resizey", 128);
+            loc.resizez = (Integer) locData.getOrDefault("resizez", 128);
+            loc.offsetx = (Integer) locData.getOrDefault("offsetx", 0);
+            loc.offsety = (Integer) locData.getOrDefault("offsety", 0);
+            loc.offsetz = (Integer) locData.getOrDefault("offsetz", 0);
+            loc.width = (int) locData.getOrDefault("width", 1);
+            loc.length = (int) locData.getOrDefault("length", 1);
+            loc.shadow = (Boolean) locData.getOrDefault("shadow", true);
+            loc.blockwalk = (Boolean) locData.getOrDefault("blockwalk", true);
             Map<Integer, int[]> recols = (Map<Integer, int[]>) locData.get("recols");
             if (recols != null) {
-                int maxIndex = 0;
-                for (Integer index : recols.keySet()) {
-                    maxIndex = Math.max(maxIndex, index);
-                }
+                int maxIndex = recols.keySet().stream().max(Integer::compare).orElse(0);
                 loc.recol_s = new int[maxIndex + 1];
                 loc.recol_d = new int[maxIndex + 1];
                 for (Map.Entry<Integer, int[]> entry : recols.entrySet()) {
-                    int index = entry.getKey();
-                    int[] values = entry.getValue();
-
-                    loc.recol_s[index] = values[0];
-                    loc.recol_d[index] = values[1];
+                    loc.recol_s[entry.getKey()] = entry.getValue()[0];
+                    loc.recol_d[entry.getKey()] = entry.getValue()[1];
                 }
             }
-            loc.resizex = (Integer) locData.get("resizex");
-            loc.resizey = (Integer) locData.get("resizey");
-            loc.resizez = (Integer) locData.get("resizez");
-            loc.offsetx = (Integer) locData.get("offsetx");
-            loc.offsety = (Integer) locData.get("offsety");
-            loc.offsetz = (Integer) locData.get("offsetz");
-            loc.forcedecor = (Boolean) locData.getOrDefault("forcedecor", false);
-            loc.mirror = (Boolean) locData.getOrDefault("mirror", false);
-            loc.hillskew = (Boolean) locData.getOrDefault("hillskew", false);
-            loc.sharelight = (Boolean) locData.getOrDefault("sharelight", false);
-            loc.ambient = (byte) locData.get("ambient");
-            loc.contrast = (byte) locData.get("contrast");
-            loc.mapfunction = (Integer) locData.get("mapfunction");
-            loc.width = (int) locData.getOrDefault("width", 1);
-            loc.length = (int) locData.getOrDefault("length", 1);
-            loc.mirror = (Boolean) locData.getOrDefault("mirror", false);
-            loc.shadow = (Boolean) locData.getOrDefault("shadow", false);
         } else {
-            locTypeCache.put(id, loc);
-            loc.model = FileLoader.getLocMap().get(id);
+            loc.model = locName;
         }
+
+        locTypeCache.put(id, loc);
         return loc;
     }
 

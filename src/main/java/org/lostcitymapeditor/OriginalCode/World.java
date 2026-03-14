@@ -246,19 +246,16 @@ public class World {
         int y = (heightSW + heightSE + heightNW + heightNE >> 2);
         LocType loc = LocType.get(locId);
         String target = loc.model;
-        Integer modelId = FileLoader.getModelMap().get(target);
+        String shapeSuffix = SHAPE_SUFFIX_MAP.get(shape);
+        Integer modelId = null;
 
-
-        if (modelId == null) {
-            String shapeSuffix = SHAPE_SUFFIX_MAP.get(shape);
-
-            if (shapeSuffix != null) {
-                modelId = FileLoader.getModelMap().get(target + shapeSuffix);
-            } else {
-                System.err.println("Unexpected shape value: " + shape);
-            }
+        if (shapeSuffix != null) {
+            modelId = FileLoader.getModelMap().get(target + shapeSuffix);
         }
 
+        if (modelId == null) {
+            modelId = FileLoader.getModelMap().get(target);
+        }
 
         if (modelId == null) {
             modelId = findModelWithSuffix(target);

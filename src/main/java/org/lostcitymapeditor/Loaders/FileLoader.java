@@ -10,7 +10,9 @@ import org.lostcitymapeditor.Transformers.NpcFileTransformer;
 import org.lostcitymapeditor.Transformers.ObjFileTransformer;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.lostcitymapeditor.Loaders.TileShapeLoader.loadShapeImages;
@@ -103,5 +105,28 @@ public class FileLoader {
 
     public static Map<String, OptFileTransformer.TextureOptions> getTextureOptsMap() {
         return textureOptsMap;
+    }
+
+    public static List<Integer> getViableShapesForLoc(String scriptName) {
+        List<Integer> viableShapes = new ArrayList<>();
+        Map<String, Integer> modelMap = getModelMap();
+
+        String modelBaseName = scriptName;
+        Map<String, Object> scriptData = (Map<String, Object>) getAllLocMap().get(scriptName);
+        if (scriptData != null && scriptData.containsKey("model")) {
+            modelBaseName = (String) scriptData.get("model");
+        }
+
+        for (Map.Entry<Integer, String> entry : org.lostcitymapeditor.OriginalCode.World.SHAPE_SUFFIX_MAP.entrySet()) {
+            if (modelMap.containsKey(modelBaseName + entry.getValue())) {
+                viableShapes.add(entry.getKey());
+            }
+        }
+
+        if (viableShapes.isEmpty() && modelMap.containsKey(modelBaseName)) {
+            viableShapes.add(10);
+        }
+
+        return viableShapes;
     }
 }

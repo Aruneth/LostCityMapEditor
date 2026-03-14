@@ -535,7 +535,7 @@ public class OpenGLRenderer {
                     "Wall Straight", "Wall Diagonal Corner", "Wall L", "Wall Square Corner",
                     "Wall Decor Straight No Offset", "Wall Decor Straight Offset", "Wall Decor Diagonal Offset",
                     "Wall Decor Diagonal No Offset", "Wall Decor Diagonal Both", "Wall Diagonal",
-                    "(DEFAULT) Centrepiece Straight", "Centrepiece Diagonal", "Roof Straight",
+                    "Centrepiece Straight", "Centrepiece Diagonal", "Roof Straight",
                     "Roof Diagonal With Roof Edge", "Roof Diagonal", "Roof L Concave", "Roof L Convex",
                     "Roof Flat", "Roof Edge Straight", "Roof Edge Diagonal Corner", "Roof Edge L",
                     "Roof Edge Square Corner", "Ground Decor"
@@ -939,6 +939,31 @@ public class OpenGLRenderer {
             sideBar.setPadding(new Insets(10));
             sideBar.setBorder(new Border(new BorderStroke(Color.BLACK, BorderStrokeStyle.SOLID, CornerRadii.EMPTY, BorderWidths.DEFAULT)));
             modelViewerSelector = new ModelViewerSelector(modelViewer);
+
+            modelViewerSelector.getModelListView().getSelectionModel().selectedItemProperty().addListener(
+                    (observable, oldValue, newValue) -> {
+                        if (newValue != null) {
+                            List<Integer> viable = FileLoader.getViableShapesForLoc(newValue);
+
+                            Platform.runLater(() -> {
+                                locShapeValues.clear();
+                                locShapeValues.addAll(viable);
+
+                                if (!viable.isEmpty()) {
+                                    if (viable.contains(10)) {
+                                        locShapeListView.getSelectionModel().select(Integer.valueOf(10));
+                                        selectedLocShape = 10;
+                                    } else {
+                                        locShapeListView.getSelectionModel().select(0);
+                                        selectedLocShape = viable.get(0);
+                                    }
+
+                                    modelViewerSelector.updateModel(selectedLocShape);
+                                }
+                            });
+                        }
+                    }
+            );
 
             SwingNode modelViewerSwingNode = new SwingNode();
             Platform.runLater(() -> modelViewerSwingNode.setContent(modelViewer));
