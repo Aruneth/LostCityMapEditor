@@ -1,0 +1,124 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #1a1a1a;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 12px;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  height: calc(100vh - 20px);  /* leave room for status bar */
+}
+
+#sidebar-left {
+  width: 250px;
+  background: #252525;
+  border-right: 1px solid #3a3a3a;
+  padding: 8px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+#glCanvas {
+  flex: 1;
+  display: block;
+  /* Height set by JS to match parent on resize */
+}
+
+#sidebar-right {
+  width: 300px;
+  background: #252525;
+  border-left: 1px solid #3a3a3a;
+  padding: 8px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.placeholder {
+  color: #555;
+  padding: 8px 0;
+}
+
+/* Shared form styles used by TileInspector and EntityInspector (T11) */
+.inspector-section {
+  margin-bottom: 12px;
+}
+
+.inspector-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #333;
+  padding-bottom: 4px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  gap: 6px;
+}
+
+.field-row label {
+  width: 80px;
+  color: #aaa;
+  flex-shrink: 0;
+}
+
+.field-row input,
+.field-row select {
+  flex: 1;
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  color: #e0e0e0;
+  padding: 2px 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.field-row input:focus,
+.field-row select:focus {
+  outline: 1px solid #5a8a5a;
+  border-color: #5a8a5a;
+}
+
+button.action {
+  width: 100%;
+  padding: 5px;
+  background: #2e4a2e;
+  border: 1px solid #3a6a3a;
+  color: #90d090;
+  font-family: monospace;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+button.action:hover {
+  background: #3a5a3a;
+}
+
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: #1a2a1a;
+  border-top: 1px solid #3a3a3a;
+  padding: 0 8px;
+  line-height: 20px;
+  font-size: 11px;
+  color: #888;
+  z-index: 100;
+}

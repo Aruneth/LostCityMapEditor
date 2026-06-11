@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Force)",
+      "Bash(Get-ChildItem *)",
+      "Bash(npm install *)",
+      "Bash(Get-Content \"C:\\\\Users\\\\Jeroen\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Jeroen-Documents-GitHub-Aruneth-LostCityMapEditor\\\\137e8abe-d8e9-4289-96f1-e36ba741db9d\\\\tasks\\\\bw387khrc.output\" -Wait -Tail 30)",
+      "Bash(exit 0)",
+      "Bash(node -e \"require\\('./electron/main.js'\\)\")",
+      "Bash(node_modules/.bin/vite build *)",
+      "Bash(node --input-type=module)",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\Jeroen\\\\Documents\\\\GitHub\\\\Aruneth\\\\LostCityMapEditor\\\\lostcity-map-editor\\\\public\\\\Data\\\\TileShapes\")",
+      "Bash(Out-Null)",
+      "Bash(New-Item -ItemType File -Force \"C:\\\\Users\\\\Jeroen\\\\Documents\\\\GitHub\\\\Aruneth\\\\LostCityMapEditor\\\\lostcity-map-editor\\\\public\\\\Data\\\\TileShapes\\\\.gitkeep\")",
+      "Bash(Write-Host \"created\")",
+      "PowerShell(New-Item *)",
+      "Bash(Select-Object -First 20)"
+    ]
+  }
+}
