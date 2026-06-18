@@ -1,7 +1,7 @@
 import { colourTable } from '../util/colourTable.js'
 
 // Floats per vertex — must match ShaderManager attribute layout.
-//   aPos(3) + aColor(3) + aTexCoord(2) + aUseTexture(1) + aIsHovered(1) = 10
+//   aPos(3) + aColor(3) + aTexCoord(2) + aUseTexture(1) + aTileXZ(1) = 10
 const STRIDE       = 10
 const STRIDE_BYTES = STRIDE * 4   // Float32 = 4 bytes
 
@@ -70,8 +70,8 @@ export function uploadTriangles(gl, triangles) {
         // useTexture flag
         data[di++] = hasTex ? 1.0 : 0.0
 
-        // isHovered — always 0 at upload; T12/T13 trigger a partial re-upload for hover.
-        data[di++] = 0.0
+        // aTileXZ — packed tile address (tileX * 64 + tileZ); used by hover highlight in shader.
+        data[di++] = tri.tileX * 64 + tri.tileZ
       }
     }
 

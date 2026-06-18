@@ -15,12 +15,12 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aColor;
 layout(location = 2) in vec2 aTexCoord;
 layout(location = 3) in float aUseTexture;
-layout(location = 4) in float aIsHovered;
+layout(location = 4) in float aTileXZ;
 
 out vec3  vertexColor;
 out vec2  TexCoord;
 out float useTexture;
-out float isHovered;
+out float tileXZ;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -31,7 +31,7 @@ void main() {
   vertexColor = aColor;
   TexCoord    = aTexCoord;
   useTexture  = aUseTexture;
-  isHovered   = aIsHovered;
+  tileXZ      = aTileXZ;
 }`
 
 const FRAG_SRC = `#version 300 es
@@ -40,24 +40,24 @@ precision mediump float;
 in vec3  vertexColor;
 in vec2  TexCoord;
 in float useTexture;
-in float isHovered;
+in float tileXZ;
 
 out vec4 FragColor;
 uniform sampler2D uTexture;
+uniform float uHoveredTileXZ;
 
 void main() {
   vec3 base = vertexColor;
 
-  if (isHovered > 0.5) {
-    base = min(base + vec3(0.2), vec3(1.0));
+  bool hovered = uHoveredTileXZ >= 0.0 && abs(tileXZ - uHoveredTileXZ) < 0.5;
+  if (hovered) {
+    base = min(base + vec3(0.15, 0.15, 0.0), vec3(1.0));
   }
 
   if (useTexture > 0.5) {
     vec4 texColor = texture(uTexture, TexCoord);
     if (texColor.a < 0.1) discard;
-    FragColor = isHovered > 0.5
-      ? texColor * vec4(base, 1.0)
-      : texColor;
+    FragColor = hovered ? texColor * vec4(base, 1.0) : texColor;
   } else {
     FragColor = vec4(base, 1.0);
   }
@@ -68,10 +68,11 @@ export class ShaderManager {
     this.program  = null
     // Cached uniform locations — set in createProgram().
     this.uniforms = {
-      model:      null,
-      view:       null,
-      projection: null,
-      uTexture:   null,
+      model:            null,
+      view:             null,
+      projection:       null,
+      uTexture:         null,
+      uHoveredTileXZ:   null,
     }
   }
 
@@ -95,11 +96,13 @@ export class ShaderManager {
 
     // Cache uniform locations once — avoids repeated lookups per frame.
     gl.useProgram(prog)
-    this.uniforms.model      = gl.getUniformLocation(prog, 'model')
-    this.uniforms.view       = gl.getUniformLocation(prog, 'view')
-    this.uniforms.projection = gl.getUniformLocation(prog, 'projection')
-    this.uniforms.uTexture   = gl.getUniformLocation(prog, 'uTexture')
+    this.uniforms.model           = gl.getUniformLocation(prog, 'model')
+    this.uniforms.view            = gl.getUniformLocation(prog, 'view')
+    this.uniforms.projection      = gl.getUniformLocation(prog, 'projection')
+    this.uniforms.uTexture        = gl.getUniformLocation(prog, 'uTexture')
+    this.uniforms.uHoveredTileXZ  = gl.getUniformLocation(prog, 'uHoveredTileXZ')
     gl.uniform1i(this.uniforms.uTexture, 0)   // texture unit 0
+    gl.uniform1f(this.uniforms.uHoveredTileXZ, -1.0)  // nothing hovered initially
     gl.useProgram(null)
 
     return prog

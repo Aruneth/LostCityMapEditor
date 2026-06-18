@@ -1,6 +1,3 @@
-import { OverlayData  } from '../data/OverlayData.js'
-import { UnderlayData } from '../data/UnderlayData.js'
-
 const SHAPE_NAMES = [
   '0 – Full square',
   '1 – Half (N)',
@@ -21,13 +18,14 @@ const SHAPE_NAMES = [
 export class TileInspector {
   constructor(container, onApply) {
     this._container = container
-    this._onApply   = onApply    // (updatedTileData) → void
+    this._onApply   = onApply    // (tile, values) → void — caller owns mutation + undo
     this._tile      = null
     this._build()
   }
 
   _build() {
     this._container.innerHTML = `
+      <div id="tile-inspector-hint" class="placeholder" style="padding:8px 0;font-size:11px">Click a tile to inspect &amp; edit</div>
       <div class="inspector-section" id="tile-inspector" style="display:none">
         <h3>Tile <span id="tile-coord" style="color:#aaa;font-weight:normal"></span></h3>
 
@@ -84,12 +82,15 @@ export class TileInspector {
     this._tile = tile
     const panel = document.getElementById('tile-inspector')
 
+    const hint = document.getElementById('tile-inspector-hint')
     if (!tile) {
       panel.style.display = 'none'
+      if (hint) hint.style.display = ''
       return
     }
 
     panel.style.display = ''
+    if (hint) hint.style.display = 'none'
     document.getElementById('tile-coord').textContent = `(${tile.x}, ${tile.z})`
     document.getElementById('ti-height').value      = tile.height ?? 0
     document.getElementById('ti-underlay-id').value = tile.underlay?.id ?? 0
@@ -99,32 +100,25 @@ export class TileInspector {
     document.getElementById('ti-flag').value         = tile.flag     ?? 0
   }
 
-  // Read form values back into the stored tile and call onApply.
+  get tile() { return this._tile }
+
+  // Apply current form values to an arbitrary tile (Ctrl+click stamp).
+  applyTo(tile) {
+    this._tile = tile
+    this._apply()
+  }
+
+  // Read form values and pass them to the callback without mutating the tile.
+  // The caller (main.js) saves undo state first, then applies the values.
   _apply() {
     if (!this._tile) return
-    const tile = this._tile
-
-    tile.height   = parseInt(document.getElementById('ti-height').value,      10) || 0
-    tile.shape    = parseInt(document.getElementById('ti-shape').value,        10)
-    tile.rotation = parseInt(document.getElementById('ti-rotation').value,     10)
-    tile.flag     = parseInt(document.getElementById('ti-flag').value,         10) || 0
-
-    const underlayId = parseInt(document.getElementById('ti-underlay-id').value, 10)
-    if (underlayId >= 0) {
-      tile.underlay = tile.underlay ?? new UnderlayData()
-      tile.underlay.id = underlayId
-    } else {
-      tile.underlay = null
-    }
-
-    const overlayId = parseInt(document.getElementById('ti-overlay-id').value, 10)
-    if (overlayId >= 0) {
-      tile.overlay = tile.overlay ?? new OverlayData(overlayId)
-      tile.overlay.id = overlayId
-    } else {
-      tile.overlay = null
-    }
-
-    this._onApply(tile)
+    this._onApply(this._tile, {
+      height:    parseInt(document.getElementById('ti-height').value,      10) || 0,
+      shape:     parseInt(document.getElementById('ti-shape').value,       10),
+      rotation:  parseInt(document.getElementById('ti-rotation').value,    10),
+      flag:      parseInt(document.getElementById('ti-flag').value,        10) || 0,
+      underlayId: parseInt(document.getElementById('ti-underlay-id').value, 10),
+      overlayId:  parseInt(document.getElementById('ti-overlay-id').value,  10),
+    })
   }
 }

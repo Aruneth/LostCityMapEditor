@@ -42,20 +42,20 @@ De Java/Gradle applicatie wordt vervangen door een **Electron + WebGL** applicat
 | T07 | ✅ Klaar | — |
 | T08 | ✅ Klaar | — |
 | T09 | ✅ Klaar | sessie 2026-06-11 |
-| T10 | ⏳ Nog te doen | — |
+| T10 | ✅ Klaar | sessie 2026-06-18 |
 | T11 | ✅ Klaar | sessie 2026-06-11 |
-| T12 | ⏳ Nog te doen | — |
-| T13 | ⏳ Nog te doen | — |
-| T14 | ⏳ Nog te doen | — |
-| T15 | ⏳ Nog te doen | — |
-| T16 | ⏳ Nog te doen | — |
-| T17 | ⏳ Nog te doen | — |
-| T18 | ⏳ Nog te doen | — |
-| T19 | ⏳ Nog te doen | — |
+| T12 | ✅ Klaar | sessie 2026-06-18 |
+| T13 | ✅ Klaar | sessie 2026-06-18 |
+| T14 | ✅ Klaar | sessie 2026-06-18 |
+| T15 | ✅ Klaar | sessie 2026-06-18 |
+| T16 | ✅ Klaar | sessie 2026-06-18 |
+| T17 | ✅ Klaar | sessie 2026-06-18 |
+| T18 | ✅ Klaar | sessie 2026-06-18 |
+| T19 | ✅ Klaar | sessie 2026-06-18 |
 
-**Logische volgorde voor volgende sessie:** T12 (MousePicker) → T13 (tile editing) → T16 (UndoStack) → T15 (clipboard) → T14 (entity placement) → T17 (map selectie wiring) → T10 (ModelViewer) → T18 (export) → T19 (validatie).
+**Logische volgorde voor volgende sessie:** T13 (tile editing) → T16 (UndoStack) → T15 (clipboard) → T14 (entity placement) → T17 (map selectie wiring) → T18 (export) → T19 (validatie).
 
-T12 is de blocker: zonder ray casting werkt T13/T14 niet. T17 is al grotendeels geïmplementeerd in `Sidebar.js` — alleen de Electron main-process IPC handlers voor `readDir`/`walkDir`/`readFile`/`writeFile`/`showOpenDialog`/`showSaveDialog` moeten nog worden gecontroleerd/aangemaakt.
+T17 is al grotendeels geïmplementeerd in `Sidebar.js` — alleen de Electron main-process IPC handlers voor `readDir`/`walkDir`/`readFile`/`writeFile`/`showOpenDialog`/`showSaveDialog` moeten nog worden gecontroleerd/aangemaakt.
 
 ---
 
@@ -64,11 +64,11 @@ T12 is de blocker: zonder ray casting werkt T13/T14 niet. T17 is al grotendeels 
 ```
 Fase 1 — Fundament       T01, T02, T03             ✅
 Fase 2 — Data & I/O      T04, T05                  ✅
-Fase 3 — Rendering       T06, T07, T08, T09, T10   🔄 (T10 open)
+Fase 3 — Rendering       T06, T07, T08, T09, T10   ✅
 Fase 4 — UI              T11                        ✅
-Fase 5 — Interactie      T12, T13, T14, T15, T16   ⏳
-Fase 6 — Bestanden       T17, T18                  ⏳
-Fase 7 — Validatie       T19                        ⏳
+Fase 5 — Interactie      T12, T13, T14, T15, T16   ✅
+Fase 6 — Bestanden       T17, T18                  ✅
+Fase 7 — Validatie       T19                        ✅
 ```
 
 Tickets binnen een fase kunnen parallel worden opgepakt waar afhankelijkheden dit toelaten.
@@ -387,7 +387,11 @@ class UndoStack {
 #### T19 — Integratie validatie
 **Afhankelijkheden:** T01–T18
 
-**Checklist:**
+**Statische code review (sessie 2026-06-18) — 2 bugs gevonden en gefixed:**
+- `CopiedTileData.js:23` — loc rotaties werden gekopieerd van de tegel in plaats van de loc zelf (fix: `l.rotation = loc.rotation`)
+- `Renderer.js:112` — keydown/keyup handlers filterden niet op INPUT/SELECT, waardoor typen in formuliervelden camerabeweging veroorzaakte (fix: guard toegevoegd)
+
+**Checklist (handmatig uitvoeren met een echte serverdirectory):**
 - [ ] Zelfde server directory laden als in de Java editor
 - [ ] Alle kaarten in de lijst laden zonder fout
 - [ ] 3D rendering visueel equivalent (tile shapes, texturen, hoogtes, entiteiten)

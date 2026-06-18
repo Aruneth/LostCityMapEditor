@@ -72,6 +72,12 @@ export class Camera {
     return out
   }
 
+  getProjectionMatrix(aspect) {
+    const proj = mat4.create()
+    mat4.perspective(proj, this.zoom * DEG, aspect, 10, 15000)
+    return proj
+  }
+
   // Uploads model/view/projection uniforms. Called by Renderer._drawScene().
   uploadUniforms(gl, uniforms, aspect) {
     const model = mat4.create()   // identity

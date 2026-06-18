@@ -25,7 +25,9 @@ export class Renderer {
     this.mouseY = 0
     this.keysHeld = new Set()         // lowercase key names, e.g. 'w', 'l', 'control'
     this.rightMouseHeld = false
-    this.leftMouseJustClicked = false // consumed once per click in the loop
+    this.leftMouseJustClicked  = false // consumed once per click in the loop
+    this.rightMouseJustClicked = false // true only when right-click released with < 5px drag
+    this._rightDragDist        = 0     // accumulated drag distance for current right-press
 
     // Accumulated mouse movement since the last frame — consumed by Camera.update().
     this.mouseMoveDX = 0
@@ -83,6 +85,7 @@ export class Renderer {
       if (this.rightMouseHeld) {
         this.mouseMoveDX += e.movementX
         this.mouseMoveDY += e.movementY
+        this._rightDragDist += Math.abs(e.movementX) + Math.abs(e.movementY)
       }
     })
 
@@ -91,22 +94,28 @@ export class Renderer {
     }, { passive: true })
 
     canvas.addEventListener('mousedown', e => {
-      if (e.button === 2) this.rightMouseHeld = true
+      if (e.button === 2) { this.rightMouseHeld = true; this._rightDragDist = 0 }
       if (e.button === 0) this.leftMouseJustClicked = true
     })
 
     canvas.addEventListener('mouseup', e => {
-      if (e.button === 2) this.rightMouseHeld = false
+      if (e.button === 2) {
+        this.rightMouseHeld = false
+        if (this._rightDragDist < 5) this.rightMouseJustClicked = true
+      }
     })
 
     // Prevent browser context menu on right-click inside canvas.
     canvas.addEventListener('contextmenu', e => e.preventDefault())
 
     // Track all held keys. Storing lowercase normalises e.g. 'Control' → 'control'.
+    // Skip when a form field is focused to avoid camera movement while typing.
     window.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return
       this.keysHeld.add(e.key.toLowerCase())
     })
     window.addEventListener('keyup', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return
       this.keysHeld.delete(e.key.toLowerCase())
     })
   }
@@ -153,10 +162,14 @@ export class Renderer {
       )
     }
 
-    // 3. Handle left-click editor actions (T13/T14/T15/T16 wire into onLeftClick).
+    // 3. Handle click editor actions.
     if (this.leftMouseJustClicked) {
       this.leftMouseJustClicked = false
       if (this.onLeftClick) this.onLeftClick(this.keysHeld, this.scene.hoveredTile)
+    }
+    if (this.rightMouseJustClicked) {
+      this.rightMouseJustClicked = false
+      if (this.onRightClick) this.onRightClick(this.keysHeld, this.scene.hoveredTile)
     }
 
     // 4. Drain queued GL tasks (map loads, scene rebuilds, etc.).
@@ -185,6 +198,10 @@ export class Renderer {
     // Signature: camera.uploadUniforms(gl, uniformLocations, aspect) — implemented in T08.
     const aspect = canvas.width / canvas.height
     camera.uploadUniforms(gl, shaderManager.uniforms, aspect)
+
+    // Upload hover uniform — -1.0 means nothing hovered.
+    const h = this.scene.hoveredTile
+    gl.uniform1f(shaderManager.uniforms.uHoveredTileXZ, h ? h.x * 64 + h.z : -1.0)
 
     // Draw each texture group (one VAO per texture — see VertexDataHandler).
     for (const [_texId, { vao, count, glTexture }] of scene.vaoGroups) {

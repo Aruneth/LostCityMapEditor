@@ -98,7 +98,7 @@ function hsl24to16(hue, saturation, lightness) {
   return ((hue / 4) | 0) << 10 | ((saturation / 32) | 0) << 7 | (lightness / 2) | 0
 }
 
-function mulHSL(hsl, lightness) {
+export function mulHSL(hsl, lightness) {
   if (hsl === -1) return SKIP_COLOR
   lightness = (lightness * (hsl & 0x7F) / 128) | 0
   if (lightness < 2)   lightness = 2
@@ -464,6 +464,15 @@ function emitOverlayTile(
     secondary[v] = col2
   }
 
+  // World-space UV coordinates: U = worldX / 128, V = worldZ / 128.
+  // gl.REPEAT wraps integer UV values, giving one texture repeat per tile.
+  const uvX = new Float32Array(vertexCount)
+  const uvZ = new Float32Array(vertexCount)
+  for (let v = 0; v < vertexCount; v++) {
+    uvX[v] = vx[v] / ONE
+    uvZ[v] = vz[v] / ONE
+  }
+
   const paths = SHAPE_PATHS[shape]
   const triCount = (paths.length / 4) | 0
 
@@ -490,26 +499,31 @@ function emitOverlayTile(
       vertices: [vx[a], vy[a], vz[a], vx[b], vy[b], vz[b], vx[c], vy[c], vz[c]],
       colors,
       textureId: triTexId,
+      textureCoordinates: triTexId >= 0 ? [uvX[a], uvZ[a], uvX[b], uvZ[b], uvX[c], uvZ[c]] : null,
     }))
   }
 }
 
 // ── Entity geometry (Locs, NPCs, Objs) ────────────────────────────────────────
 
-function buildEntityGeometry(mapData, assetStore, heightmap, level, out) {
-  if (mapData.locations) {
+function buildEntityGeometry(mapData, assetStore, heightmap, level, out, options = {}) {
+  const showLocs = options.showLocs !== false
+  const showNpcs = options.showNpcs !== false
+  const showObjs = options.showObjs !== false
+
+  if (showLocs && mapData.locations) {
     for (const loc of mapData.locations) {
       if (loc.level !== level) continue
       addLoc(loc, assetStore, heightmap, level, out)
     }
   }
-  if (mapData.npcs) {
+  if (showNpcs && mapData.npcs) {
     for (const npc of mapData.npcs) {
       if (npc.level !== level) continue
       addNpc(npc, assetStore, heightmap, level, out)
     }
   }
-  if (mapData.objects) {
+  if (showObjs && mapData.objects) {
     for (const obj of mapData.objects) {
       if (obj.level !== level) continue
       addObj(obj, assetStore, heightmap, level, out)
@@ -620,6 +634,53 @@ function addObj(obj, assetStore, heightmap, level, out) {
     obj.x, obj.z, level, out)
 }
 
+// Compute UV for all three vertices of a model face using the P/M/N reference-plane method.
+// Matches Model.calculateTextureCoordinates() in Java exactly:
+// P is the UV origin (0,0); M endpoint defines the U axis; N endpoint defines the V axis.
+// Uses the dual-basis (oblique projection) method via cross products, which correctly handles
+// non-orthogonal P→M / P→N configurations (e.g. skewed wall faces).
+function computeModelFaceUV(vx, vy, vz, pIdx, mIdx, nIdx, ia, ib, ic) {
+  const pX = vx[pIdx], pY = vy[pIdx], pZ = vz[pIdx]
+
+  // P→M and P→N
+  const f882 = vx[mIdx] - pX, f883 = vy[mIdx] - pY, f884 = vz[mIdx] - pZ
+  const f885 = vx[nIdx] - pX, f886 = vy[nIdx] - pY, f887 = vz[nIdx] - pZ
+
+  // Face-vertex offsets from P
+  const ax = vx[ia] - pX, ay = vy[ia] - pY, az = vz[ia] - pZ
+  const bx = vx[ib] - pX, by = vy[ib] - pY, bz = vz[ib] - pZ
+  const cx = vx[ic] - pX, cy = vy[ic] - pY, cz = vz[ic] - pZ
+
+  // Normal = (P→M) × (P→N)
+  const f897 = f883 * f887 - f884 * f886
+  const f898 = f884 * f885 - f882 * f887
+  const f899 = f882 * f886 - f883 * f885
+
+  // U dual basis = (P→N) × normal; normalised so dot(dual_U, P→M) = 1
+  let f900 = f886 * f899 - f887 * f898
+  let f901 = f887 * f897 - f885 * f899
+  let f902 = f885 * f898 - f886 * f897
+  let denom = f900 * f882 + f901 * f883 + f902 * f884
+  if (denom === 0) return [0, 0, 0, 0, 0, 0]
+  let inv = 1.0 / denom
+  const ua = (f900 * ax + f901 * ay + f902 * az) * inv
+  const ub = (f900 * bx + f901 * by + f902 * bz) * inv
+  const uc = (f900 * cx + f901 * cy + f902 * cz) * inv
+
+  // V dual basis = (P→M) × normal; normalised so dot(dual_V, P→N) = 1
+  f900 = f883 * f899 - f884 * f898
+  f901 = f884 * f897 - f882 * f899
+  f902 = f882 * f898 - f883 * f897
+  denom = f900 * f885 + f901 * f886 + f902 * f887
+  if (denom === 0) return [ua, 0, ub, 0, uc, 0]
+  inv = 1.0 / denom
+  const va = (f900 * ax + f901 * ay + f902 * az) * inv
+  const vb = (f900 * bx + f901 * by + f902 * bz) * inv
+  const vc = (f900 * cx + f901 * cy + f902 * cz) * inv
+
+  return [ua, va, ub, vb, uc, vc]
+}
+
 // Emit one Triangle per face of a model, applying rotation, scale, offset, and yaw.
 function emitModelTriangles(
   model, rotation, px, py, pz, yaw,
@@ -675,8 +736,8 @@ function emitModelTriangles(
   const lightDirZ = LIGHT_Z / LIGHT_MAG
 
   for (let f = 0; f < model.faceCount; f++) {
-    // Skip faces marked hidden by faceInfos=-1 (normal-merge removal)
-    if (model.faceInfos?.[f] === -1) continue
+    // Skip faces marked hidden (faceInfo byte 0xFF = 255, Java -1 signed byte)
+    if (model.faceInfos?.[f] === 255) continue
     // Skip fully-transparent faces
     if (model.faceAlphas?.[f] === 255) continue
 
@@ -704,8 +765,21 @@ function emitModelTriangles(
       lightValue = Math.max(10, Math.min(126, (LIGHT_AMBIENT + dot * 60) | 0))
     }
 
-    const rawHsl = model.faceColors[f]
+    // For textured faces the color slot holds the texture ID, not an HSL value.
+    // Use a neutral mid-grey (hsl=127) so the hover tint still works correctly.
+    const tcIdx  = model.textureCoords?.[f] ?? -1
+    const texId  = tcIdx >= 0 ? (model.faceTextures?.[f] ?? -1) : -1
+    const rawHsl = tcIdx >= 0 ? 127 : model.faceColors[f]
     const hslColor = mulHSL(rawHsl, lightValue)
+
+    // UV coordinates from the P/M/N reference plane (only for textured faces).
+    let texCoords = null
+    if (tcIdx >= 0 && texId >= 0) {
+      const pIdx = model.texturePCoordinate[tcIdx]
+      const mIdx = model.textureMCoordinate[tcIdx]
+      const nIdx = model.textureNCoordinate[tcIdx]
+      texCoords = computeModelFaceUV(vx, vy, vz, pIdx, mIdx, nIdx, ia, ib, ic)
+    }
 
     out.push(new Triangle({
       isModel: true,
@@ -713,7 +787,8 @@ function emitModelTriangles(
       shape: 0, rotation: 0,
       vertices: [ax, ay, az, bx, by, bz, cx, cy, cz],
       colors:   [hslColor, hslColor, hslColor],
-      textureId: model.faceTextures?.[f] ?? -1,
+      textureId: texId,
+      textureCoordinates: texCoords,
     }))
   }
 }
@@ -731,21 +806,65 @@ export class WorldBuilder {
   }
 
   // Converts MapData → Triangle[] for the given display level.
-  buildGeometry(mapData, assetStore, level) {
+  // Pass level = -1 to render all four levels simultaneously.
+  // options: { showLocs, showNpcs, showObjs } — all default true.
+  buildGeometry(mapData, assetStore, level, options = {}) {
     if (!this._floTypes) this.initFloTypes(assetStore)
 
     const heightmap = buildHeightmap(mapData)
-    const lightmap  = buildLightmap(heightmap, level)
     const triangles = []
+    const levels    = level === -1 ? [0, 1, 2, 3] : [level]
 
-    buildTileGeometry(mapData, this._floTypes, heightmap, lightmap, level, triangles)
-    buildEntityGeometry(mapData, assetStore, heightmap, level, triangles)
+    for (const lv of levels) {
+      const before   = triangles.length
+      const lightmap = buildLightmap(heightmap, lv)
+      buildTileGeometry(mapData, this._floTypes, heightmap, lightmap, lv, triangles)
+      buildEntityGeometry(mapData, assetStore, heightmap, lv, triangles, options)
+      if (levels.length > 1) console.log(`[WorldBuilder] level ${lv}: ${triangles.length - before} triangles`)
+    }
 
     return triangles
   }
 }
 
 export const worldBuilder = new WorldBuilder()
+
+// Resolves the first model ID for a clicked entity. Used by ModelViewer (T10).
+export function resolveEntityModelId(type, entity, assetStore) {
+  if (type === 'loc') {
+    const locName = assetStore.locPackMap.get(entity.id)
+    if (!locName) return null
+    const locData   = assetStore.allLocMap.get(locName)
+    const modelBase = locData?.model ?? locName
+    const shapeSuffix = SHAPE_SUFFIX_MAP.get(entity.shape ?? 0)
+    let modelId = null
+    if (shapeSuffix) modelId = assetStore.modelPackMap.get(modelBase + shapeSuffix) ?? null
+    if (modelId == null) modelId = assetStore.modelPackMap.get(modelBase) ?? null
+    if (modelId == null) {
+      for (const suf of SUFFIXES) {
+        const c = assetStore.modelPackMap.get(modelBase + suf)
+        if (c != null) { modelId = c; break }
+      }
+    }
+    return modelId
+  }
+  if (type === 'npc') {
+    const npcName = assetStore.npcPackMap.get(entity.id)
+    if (!npcName) return null
+    const npcData = assetStore.allNpcMap.get(npcName)
+    if (!npcData?.models?.length) return null
+    return assetStore.modelPackMap.get(npcData.models[0]) ?? null
+  }
+  if (type === 'obj') {
+    const objName = assetStore.objPackMap.get(entity.id)
+    if (!objName) return null
+    const objData = assetStore.allObjMap.get(objName)
+    const modelName = objName.startsWith('cert_') ? 'model_2429_obj' : (objData?.model ?? '')
+    if (!modelName) return null
+    return assetStore.modelPackMap.get(modelName) ?? null
+  }
+  return null
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

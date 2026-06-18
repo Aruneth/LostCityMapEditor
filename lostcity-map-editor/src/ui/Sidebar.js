@@ -9,9 +9,15 @@ import { loadTextures, destroyTextures }       from '../renderer/TextureManager.
 export class Sidebar {
   constructor(renderer) {
     this.renderer       = renderer
-    this.currentLevel   = 0
+    this.currentLevel   = 0   // -1 means "all levels"
     this._build()
     this._bindProgressListener()
+  }
+
+  // The level to use for entity placement, tile editing, and entity inspection.
+  // Always 0–3 even when currentLevel is -1 (all levels display).
+  get editLevel() {
+    return this.currentLevel < 0 ? 0 : this.currentLevel
   }
 
   _build() {
@@ -31,12 +37,16 @@ export class Sidebar {
 
       <div class="inspector-section" id="section-level" style="display:none">
         <h3>Level</h3>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${[0,1,2,3].map(i => `
             <label style="display:flex;align-items:center;gap:3px;color:#aaa">
               <input type="radio" name="level" value="${i}" ${i===0?'checked':''}>
               ${i}
             </label>`).join('')}
+          <label style="display:flex;align-items:center;gap:3px;color:#aaa">
+            <input type="radio" name="level" value="-1">
+            All
+          </label>
         </div>
       </div>
 
@@ -68,7 +78,13 @@ export class Sidebar {
     document.querySelectorAll('input[name="level"]').forEach(radio => {
       radio.addEventListener('change', e => {
         this.currentLevel = parseInt(e.target.value, 10)
-        if (this.renderer.scene.mapData) this._rebuildScene()
+        if (this.renderer.scene.mapData) this.rebuildScene()
+      })
+    })
+
+    ;['toggle-locs', 'toggle-npcs', 'toggle-objs'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        if (this.renderer.scene.mapData) this.rebuildScene()
       })
     })
 
@@ -96,6 +112,14 @@ export class Sidebar {
     document.getElementById('section-level').style.display   = ''
     document.getElementById('section-toggles').style.display = ''
     document.getElementById('section-export').style.display  = ''
+
+    // Auto-load m50_50.jm2 if present; otherwise load the first map in the list.
+    const select = document.getElementById('map-select')
+    if (select.options.length > 0) {
+      const defaultOpt = Array.from(select.options).find(o => o.value === 'm50_50.jm2')
+      if (defaultOpt) select.value = 'm50_50.jm2'
+      this._loadSelectedMap()
+    }
   }
 
   async _populateMapList() {
@@ -115,7 +139,7 @@ export class Sidebar {
       scene.mapData        = mapData
       scene.currentMapName = name
       worldBuilder.initFloTypes(assetStore)
-      this._rebuildScene()
+      this.rebuildScene()
       this._setStatus(`Loaded ${name}`)
     } catch (e) {
       console.error('Failed to load map:', e)
@@ -124,18 +148,21 @@ export class Sidebar {
   }
 
   // Queue a full scene rebuild on the GL thread.
-  // Geometry + VAO upload is synchronous; texture loading is fire-and-forget.
-  _rebuildScene() {
+  // Reads the current entity visibility toggles and passes them to WorldBuilder.
+  rebuildScene() {
     const { renderer, currentLevel } = this
     const { gl, scene } = renderer
+    const options = {
+      showLocs: document.getElementById('toggle-locs')?.checked ?? true,
+      showNpcs: document.getElementById('toggle-npcs')?.checked ?? true,
+      showObjs: document.getElementById('toggle-objs')?.checked ?? true,
+    }
     renderer.enqueue(() => {
       destroyTextures(gl, scene.vaoGroups)
       destroyVaoGroups(gl, scene.vaoGroups)
-      const triangles = worldBuilder.buildGeometry(scene.mapData, assetStore, currentLevel)
+      const triangles = worldBuilder.buildGeometry(scene.mapData, assetStore, currentLevel, options)
       scene.triangles = triangles
       scene.vaoGroups = uploadTriangles(gl, triangles)
-      // Texture upload is async (file I/O). Scene renders untextured first,
-      // then glTexture entries are filled in as each texture resolves.
       loadTextures(gl, scene.vaoGroups)
     })
   }

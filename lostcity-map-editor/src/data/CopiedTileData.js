@@ -19,7 +19,7 @@ export class CopiedTileData {
 
     this.locs = locs.map(loc => {
       const l = new LocData(loc.level, loc.x, loc.z, loc.id, loc.shape)
-      l.rotation = tile.rotation  // preserve Java source behaviour
+      l.rotation = loc.rotation
       return l
     })
 

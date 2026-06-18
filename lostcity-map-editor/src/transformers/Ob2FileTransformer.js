@@ -91,20 +91,15 @@ export function parseOb2(buffer) {
   let faceInfo = null
   if (hasInfo) {
     faceInfo = readBytes(full, faceCount)
+    // textureCoords can be decoded now; faceTextures must wait until processColors()
+    // has populated model.faceColors (those slots hold the texture pack ID for textured faces).
     const textureCoords = new Int32Array(faceCount)
-    const faceTextures  = new Int32Array(faceCount)
     for (let i = 0; i < faceCount; i++) {
-      if ((faceInfo[i] & 0x2) === 2) {
-        textureCoords[i] = faceInfo[i] >> 2
-        faceTextures[i]  = model.faceColors[i]
-      } else {
-        textureCoords[i] = -1
-        faceTextures[i]  = -1
-      }
+      textureCoords[i] = (faceInfo[i] & 0x2) === 2 ? (faceInfo[i] >> 2) : -1
     }
     model.faceInfos     = new Int32Array(faceInfo)
-    model.faceTextures  = faceTextures
     model.textureCoords = textureCoords
+    // model.faceTextures filled below, after processColors()
   }
 
   if (hasVertexLabels) {
@@ -125,6 +120,17 @@ export function parseOb2(buffer) {
   processVertices(model, vertexXData, vertexYData, vertexZData, vertexFlags)
   processFaces(model, faceVertexData, faceIndices)
   processColors(model, faceTypeData)
+
+  // Now that faceColors is populated, extract texture pack IDs for textured faces.
+  // For textured faces (faceInfo & 0x2 == 2), the faceColors slot holds the texture pack ID.
+  if (faceInfo) {
+    const faceTextures = new Int32Array(model.faceCount).fill(-1)
+    for (let i = 0; i < model.faceCount; i++) {
+      if ((faceInfo[i] & 0x2) === 2) faceTextures[i] = model.faceColors[i]
+    }
+    model.faceTextures = faceTextures
+  }
+
   processTextures(model, texturedFaceData)
 
   return model
