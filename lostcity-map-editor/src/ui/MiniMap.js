@@ -29,8 +29,8 @@ export class MiniMap {
           if (oid >= 0 && floTypes[oid])       rgb = floTypes[oid].rgb       ?? 0x333333
           else if (uid > 0 && floTypes[uid-1]) rgb = floTypes[uid-1].rgb     ?? 0x333333
         }
-        // canvas X = tile X, canvas Y = tile Z (Z=0 at top)
-        const i  = (z * SIZE + x) * 4
+        // canvas X = tile X, canvas Y = (SIZE-1-Z) so north (low Z) is at top
+        const i  = ((SIZE - 1 - z) * SIZE + x) * 4
         d[i    ] = (rgb >> 16) & 0xFF
         d[i + 1] = (rgb >>  8) & 0xFF
         d[i + 2] =  rgb        & 0xFF
@@ -43,16 +43,16 @@ export class MiniMap {
   }
 
   _drawCrosshair() {
-    const cx = Math.round(this.camera.position[0] / 128)
-    const cz = Math.round(this.camera.position[2] / 128)
-    if (cx < 0 || cx >= SIZE || cz < 0 || cz >= SIZE) return
+    const cx       = Math.round(this.camera.position[0] / 128)
+    const tileZ    = Math.round(this.camera.position[2] / 128)
+    const canvasY  = SIZE - 1 - tileZ
+    if (cx < 0 || cx >= SIZE || canvasY < 0 || canvasY >= SIZE) return
 
     const ctx = this.ctx
-    // Dark outline so it's visible on any tile color
     ctx.fillStyle = '#000'
-    ctx.fillRect(cx - 2, cz - 2, 5, 5)
+    ctx.fillRect(cx - 2, canvasY - 2, 5, 5)
     ctx.fillStyle = '#ffff00'
-    ctx.fillRect(cx - 1, cz - 1, 3, 3)
+    ctx.fillRect(cx - 1, canvasY - 1, 3, 3)
   }
 
   _onClick(e) {
@@ -60,7 +60,8 @@ export class MiniMap {
     const scaleX = SIZE / rect.width
     const scaleY = SIZE / rect.height
     const tileX  = Math.max(0, Math.min(SIZE - 1, Math.floor((e.clientX - rect.left) * scaleX)))
-    const tileZ  = Math.max(0, Math.min(SIZE - 1, Math.floor((e.clientY - rect.top)  * scaleY)))
+    const canvasY = Math.max(0, Math.min(SIZE - 1, Math.floor((e.clientY - rect.top)  * scaleY)))
+    const tileZ  = SIZE - 1 - canvasY
     this.onNavigate(tileX, tileZ)
   }
 }

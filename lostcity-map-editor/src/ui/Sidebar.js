@@ -140,6 +140,7 @@ export class Sidebar {
       scene.currentMapName = name
       worldBuilder.initFloTypes(assetStore)
       this.rebuildScene()
+      window.dispatchEvent(new CustomEvent('map:loaded'))
       this._setStatus(`Loaded ${name}`)
     } catch (e) {
       console.error('Failed to load map:', e)

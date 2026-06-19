@@ -8,6 +8,7 @@ import { MiniMap }               from './ui/MiniMap.js'
 import { Sidebar }               from './ui/Sidebar.js'
 import { TileInspector }         from './ui/TileInspector.js'
 import { EntityInspector }       from './ui/EntityInspector.js'
+import { NpcPanel }              from './ui/NpcPanel.js'
 import { assetStore }            from './loaders/AssetStore.js'
 import { LocData }               from './data/LocData.js'
 import { NpcData }               from './data/NpcData.js'
@@ -100,12 +101,27 @@ window.addEventListener('editor:tileChanged', () => {
   sidebar.rebuildScene()
 })
 
+window.addEventListener('map:loaded', () => {
+  npcPanel.refresh(renderer.scene.mapData, assetStore)
+})
+
 // Entity placement: ID of the last inspected entity per type, used as default for new placements.
 let lastLocId = 0
 let lastNpcId = 0
 let lastObjId = 0
 
 window.addEventListener('editor:entityChanged', () => {
+  sidebar.rebuildScene()
+  npcPanel.refresh(renderer.scene.mapData, assetStore)
+})
+
+window.addEventListener('npcpanel:move', e => {
+  const { npc, x, z, level } = e.detail
+  const { mapData } = renderer.scene
+  if (!mapData) return
+  undoStack.save(mapData)
+  npc.x = x; npc.z = z; npc.level = level
+  npcPanel.refresh(mapData, assetStore)
   sidebar.rebuildScene()
 })
 
@@ -119,6 +135,7 @@ window.addEventListener('editor:entityRemoved', (e) => {
   else if (type === 'obj') mapData.objects = mapData.objects.filter(o => o !== entity)
   entityInspector.show(null, null)
   modelViewer.clear()
+  if (type === 'npc') npcPanel.refresh(mapData, assetStore)
   sidebar.rebuildScene()
 })
 
@@ -147,6 +164,11 @@ window.addEventListener('keydown', e => {
     if (pasted) sidebar.rebuildScene()
   }
 
+  if (e.key === 'Escape') {
+    npcPanel.exitMoveMode()
+    npcPanel.exitAddMode()
+  }
+
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
     if (!undoStack.canUndo()) return
     e.preventDefault()
@@ -158,6 +180,8 @@ window.addEventListener('keydown', e => {
     sidebar.rebuildScene()
   }
 })
+
+const npcPanel = new NpcPanel(document.getElementById('tab-panel-npcs'))
 
 const entityInspector = new EntityInspector(entityMount, (type, entity) => {
   // T14: Remove entity — dispatched so T14 wiring can handle undo + rebuild.
@@ -172,6 +196,26 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   const inspectLevel = hoveredTile.level ?? editLevel     // level of the clicked triangle
   const { mapData }  = renderer.scene
   const tile         = mapData.mapTiles[inspectLevel]?.[x]?.[z]
+
+  // NpcPanel add mode: place a new NPC of the chosen type at the clicked tile.
+  if (npcPanel.addMode) {
+    undoStack.save(mapData)
+    mapData.npcs.push(new NpcData(editLevel, x, z, npcPanel.addNpcId))
+    npcPanel.refresh(mapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
+
+  // NpcPanel move mode: relocate the selected NPC to the clicked tile.
+  if (npcPanel.moveMode && npcPanel.selectedNpc) {
+    const npc = npcPanel.selectedNpc
+    undoStack.save(mapData)
+    npc.x = x; npc.z = z; npc.level = editLevel
+    npcPanel.exitMoveMode()
+    npcPanel.refresh(mapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
 
   // L/N/O+click: place a new entity using the last-inspected ID of that type.
   if (keysHeld.has('l')) {
@@ -218,6 +262,7 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   if (npc) {
     lastNpcId = npc.id
     entityInspector.show('npc', npc)
+    npcPanel.selectNpc(npc)
     const modelId = resolveEntityModelId('npc', npc, assetStore)
     if (modelId != null) modelViewer.showModel(modelId, assetStore)
     else modelViewer.clear()
@@ -237,27 +282,8 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
 }
 
 // Right-click: remove the first entity at the hovered tile.
-renderer.onRightClick = (keysHeld, hoveredTile) => {
-  if (!hoveredTile || !renderer.scene.mapData) return
-  const { x, z }   = hoveredTile
-  const level       = hoveredTile.level ?? sidebar.editLevel
-  const { mapData } = renderer.scene
-
-  const loc = mapData.locations?.find(e => e.x === x && e.z === z && e.level === level)
-  if (loc) {
-    window.dispatchEvent(new CustomEvent('editor:entityRemoved', { detail: { type: 'loc', entity: loc } }))
-    return
-  }
-  const npc = mapData.npcs?.find(e => e.x === x && e.z === z && e.level === level)
-  if (npc) {
-    window.dispatchEvent(new CustomEvent('editor:entityRemoved', { detail: { type: 'npc', entity: npc } }))
-    return
-  }
-  const obj = mapData.objects?.find(e => e.x === x && e.z === z && e.level === level)
-  if (obj) {
-    window.dispatchEvent(new CustomEvent('editor:entityRemoved', { detail: { type: 'obj', entity: obj } }))
-  }
-}
+// Right-click is used only for camera rotation (right-drag).
+// Entity deletion is handled via the Delete buttons in NpcPanel and EntityInspector.
 
 // Mini map
 const miniMap = new MiniMap(
@@ -273,7 +299,20 @@ const miniMap = new MiniMap(
 const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
-  if (t) statusBar.textContent = `Tile (${t.x}, ${t.z}) L${t.level}  |  ${renderer.scene.currentMapName ?? ''}`
+
+  if (npcPanel.addMode) {
+    const name = assetStore.npcPackMap?.get(npcPanel.addNpcId) ?? `npc_${npcPanel.addNpcId}`
+    statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (npcPanel.moveMode && npcPanel.selectedNpc) {
+    const name = assetStore.npcPackMap?.get(npcPanel.selectedNpc.id) ?? `npc_${npcPanel.selectedNpc.id}`
+    statusBar.textContent = `Move mode — klik op de kaart om ${name} te verplaatsen  |  Esc om te annuleren`
+    canvas.style.cursor = 'crosshair'
+  } else {
+    canvas.style.cursor = ''
+    if (t) statusBar.textContent = `Tile (${t.x}, ${t.z}) L${t.level}  |  ${renderer.scene.currentMapName ?? ''}`
+  }
+
   miniMap.render(renderer.scene.mapData, worldBuilder.floTypes, sidebar.currentLevel)
 }, 100)
 
