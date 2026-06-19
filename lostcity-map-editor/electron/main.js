@@ -5,8 +5,18 @@ const fs = require('fs/promises')
 let mainWindow = null
 let worldMapWindow = null
 let serverDir = null
+let loadRadius = 1   // 0=1×1, 1=3×3, 2=5×5, 3=7×7, 4=9×9
+
+function setLoadRadius(r) {
+  loadRadius = r
+  buildMenu()
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('set-load-radius', r)
+  }
+}
 
 function buildMenu() {
+  const sizes = [[0,'1×1'],[1,'3×3'],[2,'5×5'],[3,'7×7'],[4,'9×9']]
   const template = [
     {
       label: 'File',
@@ -26,6 +36,15 @@ function buildMenu() {
         { role: 'reload' },
         { role: 'toggleDevTools' }
       ]
+    },
+    {
+      label: 'Settings',
+      submenu: sizes.map(([v, l]) => ({
+        label: `Load size: ${l}`,
+        type: 'radio',
+        checked: loadRadius === v,
+        click: () => setLoadRadius(v),
+      }))
     }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))

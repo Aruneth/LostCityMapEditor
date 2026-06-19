@@ -108,7 +108,11 @@ window.addEventListener('editor:tileChanged', () => {
   sidebar.rebuildScene()
 })
 
-window.addEventListener('map:loaded', () => {
+window.addEventListener('map:loaded', e => {
+  const px = e.detail?.primaryOriginX ?? 0
+  const pz = e.detail?.primaryOriginZ ?? 0
+  camera.position[0] = (px + 32) * 128
+  camera.position[2] = (pz + 32) * 128
   npcPanel.refresh(renderer.scene.mapData, assetStore)
   objPanel.refresh(renderer.scene.mapData, assetStore)
 })
@@ -146,16 +150,26 @@ window.addEventListener('objpanel:move', e => {
 
 window.addEventListener('editor:entityRemoved', (e) => {
   const { type, entity } = e.detail
-  const { mapData } = renderer.scene
-  if (!mapData) return
-  undoStack.save(mapData)
-  if (type === 'loc') mapData.locations = mapData.locations.filter(l => l !== entity)
-  else if (type === 'npc') mapData.npcs = mapData.npcs.filter(n => n !== entity)
-  else if (type === 'obj') mapData.objects = mapData.objects.filter(o => o !== entity)
+  const { mapData: primary, regions } = renderer.scene
+  if (!primary) return
+  // Find the region that owns this entity and remove it there.
+  const ownerRegion = regions
+    ? regions.find(r => {
+        if (type === 'loc') return r.mapData?.locations?.includes(entity)
+        if (type === 'npc') return r.mapData?.npcs?.includes(entity)
+        if (type === 'obj') return r.mapData?.objects?.includes(entity)
+        return false
+      })
+    : null
+  const target = ownerRegion?.mapData ?? primary
+  if (ownerRegion?.isPrimary ?? true) undoStack.save(primary)
+  if (type === 'loc') target.locations = target.locations.filter(l => l !== entity)
+  else if (type === 'npc') target.npcs = target.npcs.filter(n => n !== entity)
+  else if (type === 'obj') target.objects = target.objects.filter(o => o !== entity)
   entityInspector.show(null, null)
   modelViewer.clear()
-  if (type === 'npc') npcPanel.refresh(mapData, assetStore)
-  if (type === 'obj') objPanel.refresh(mapData, assetStore)
+  if (type === 'npc') npcPanel.refresh(primary, assetStore)
+  if (type === 'obj') objPanel.refresh(primary, assetStore)
   sidebar.rebuildScene()
 })
 
@@ -179,8 +193,10 @@ window.addEventListener('keydown', e => {
     e.preventDefault()
     const hovered = renderer.scene.hoveredTile
     if (!hovered) return
+    const hitV = resolveWorldTile(hovered.x, hovered.z)
+    if (!hitV?.isPrimary) return
     undoStack.save(mapData)
-    const pasted = clipboard.paste(hovered.x, hovered.z, sidebar.editLevel, mapData)
+    const pasted = clipboard.paste(hitV.localX, hitV.localZ, sidebar.editLevel, mapData)
     if (pasted) sidebar.rebuildScene()
   }
 
@@ -216,78 +232,98 @@ const entityInspector = new EntityInspector(entityMount, (type, entity) => {
   window.dispatchEvent(new CustomEvent('editor:entityRemoved', { detail: { type, entity } }))
 })
 
+// Resolve a world tile coord (after origin offset) back to region + local coords.
+function resolveWorldTile(worldX, worldZ) {
+  const regions = renderer.scene.regions
+  if (!regions) return { mapData: renderer.scene.mapData, localX: worldX, localZ: worldZ, isPrimary: true }
+  for (const r of regions) {
+    if (worldX >= r.originX && worldX < r.originX + 64 &&
+        worldZ >= r.originZ && worldZ < r.originZ + 64) {
+      return { mapData: r.mapData, localX: worldX - r.originX, localZ: worldZ - r.originZ, isPrimary: !!r.isPrimary }
+    }
+  }
+  return null
+}
+
 // Left-click: place entity (L/N/O), apply tile (Ctrl), or inspect (plain).
 renderer.onLeftClick = (keysHeld, hoveredTile) => {
   if (!hoveredTile || !renderer.scene.mapData) return
-  const { x, z }    = hoveredTile
-  const editLevel    = sidebar.editLevel                  // always 0–3, used for placement
-  const inspectLevel = hoveredTile.level ?? editLevel     // level of the clicked triangle
-  const { mapData }  = renderer.scene
-  const tile         = mapData.mapTiles[inspectLevel]?.[x]?.[z]
+  const { x, z }     = hoveredTile   // world tile coords (after origin offset)
+  const editLevel     = sidebar.editLevel
+  const inspectLevel  = hoveredTile.level ?? editLevel
 
-  // ObjPanel add mode: place a new OBJ of the chosen type at the clicked tile.
+  const hit = resolveWorldTile(x, z)
+  if (!hit) return
+  const { mapData, localX, localZ, isPrimary } = hit
+  const tile = mapData?.mapTiles[inspectLevel]?.[localX]?.[localZ]
+
+  // Primary mapData is the one we edit and save.
+  const primaryMapData = renderer.scene.mapData
+
+  // ObjPanel add mode: place a new OBJ in whichever region was clicked.
   if (objPanel.addMode) {
-    undoStack.save(mapData)
-    mapData.objects.push(new ObjData(editLevel, x, z, objPanel.addObjId, 1))
-    objPanel.refresh(mapData, assetStore)
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.objects.push(new ObjData(editLevel, localX, localZ, objPanel.addObjId, 1))
+    objPanel.refresh(primaryMapData, assetStore)
     sidebar.rebuildScene()
     return
   }
 
-  // ObjPanel move mode: relocate the selected OBJ to the clicked tile.
+  // ObjPanel move mode: only move within the same region (cross-region not supported).
   if (objPanel.moveMode && objPanel.selectedObj) {
+    if (!isPrimary) return
     const obj = objPanel.selectedObj
-    undoStack.save(mapData)
-    obj.x = x; obj.z = z; obj.level = editLevel
+    undoStack.save(primaryMapData)
+    obj.x = localX; obj.z = localZ; obj.level = editLevel
     objPanel.exitMoveMode()
-    objPanel.refresh(mapData, assetStore)
+    objPanel.refresh(primaryMapData, assetStore)
     sidebar.rebuildScene()
     return
   }
 
-  // NpcPanel add mode: place a new NPC of the chosen type at the clicked tile.
+  // NpcPanel add mode: place a new NPC in whichever region was clicked.
   if (npcPanel.addMode) {
-    undoStack.save(mapData)
-    mapData.npcs.push(new NpcData(editLevel, x, z, npcPanel.addNpcId))
-    npcPanel.refresh(mapData, assetStore)
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.npcs.push(new NpcData(editLevel, localX, localZ, npcPanel.addNpcId))
+    npcPanel.refresh(primaryMapData, assetStore)
     sidebar.rebuildScene()
     return
   }
 
-  // NpcPanel move mode: relocate the selected NPC to the clicked tile.
+  // NpcPanel move mode: only move within the same region.
   if (npcPanel.moveMode && npcPanel.selectedNpc) {
+    if (!isPrimary) return
     const npc = npcPanel.selectedNpc
-    undoStack.save(mapData)
-    npc.x = x; npc.z = z; npc.level = editLevel
+    undoStack.save(primaryMapData)
+    npc.x = localX; npc.z = localZ; npc.level = editLevel
     npcPanel.exitMoveMode()
-    npcPanel.refresh(mapData, assetStore)
+    npcPanel.refresh(primaryMapData, assetStore)
     sidebar.rebuildScene()
     return
   }
 
-  // L/N/O+click: place a new entity using the last-inspected ID of that type.
+  // L/N/O+click: place entity in whichever region was clicked.
   if (keysHeld.has('l')) {
-    undoStack.save(mapData)
-    mapData.locations.push(new LocData(editLevel, x, z, lastLocId, 10))
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.locations.push(new LocData(editLevel, localX, localZ, lastLocId, 10))
     window.dispatchEvent(new CustomEvent('editor:entityChanged'))
     return
   }
   if (keysHeld.has('n')) {
-    undoStack.save(mapData)
-    mapData.npcs.push(new NpcData(editLevel, x, z, lastNpcId))
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.npcs.push(new NpcData(editLevel, localX, localZ, lastNpcId))
     window.dispatchEvent(new CustomEvent('editor:entityChanged'))
     return
   }
   if (keysHeld.has('o')) {
-    undoStack.save(mapData)
-    mapData.objects.push(new ObjData(editLevel, x, z, lastObjId, 1))
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.objects.push(new ObjData(editLevel, localX, localZ, lastObjId, 1))
     window.dispatchEvent(new CustomEvent('editor:entityChanged'))
     return
   }
 
   if (keysHeld.has('control')) {
-    // Ctrl+click: stamp current form values onto clicked tile, then refresh form.
-    if (tile) {
+    if (tile && isPrimary) {
       tileInspector.applyTo(tile)
       tileInspector.show(tile)
     }
@@ -297,7 +333,10 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   // Plain click: inspect tile and any entity at this position.
   tileInspector.show(tile ?? null)
 
-  const loc = mapData.locations?.find(e => e.x === x && e.z === z && e.level === inspectLevel)
+  // Entity interaction only for primary region.
+  if (!isPrimary) { entityInspector.show(null, null); modelViewer.clear(); return }
+
+  const loc = mapData.locations?.find(e => e.x === localX && e.z === localZ && e.level === inspectLevel)
   if (loc) {
     lastLocId = loc.id
     entityInspector.show('loc', loc)
@@ -306,7 +345,7 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
     else modelViewer.clear()
     return
   }
-  const npc = mapData.npcs?.find(e => e.x === x && e.z === z && e.level === inspectLevel)
+  const npc = mapData.npcs?.find(e => e.x === localX && e.z === localZ && e.level === inspectLevel)
   if (npc) {
     lastNpcId = npc.id
     entityInspector.show('npc', npc)
@@ -316,7 +355,7 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
     else modelViewer.clear()
     return
   }
-  const obj = mapData.objects?.find(e => e.x === x && e.z === z && e.level === inspectLevel)
+  const obj = mapData.objects?.find(e => e.x === localX && e.z === localZ && e.level === inspectLevel)
   if (obj) {
     lastObjId = obj.id
     entityInspector.show('obj', obj)
@@ -370,7 +409,9 @@ setInterval(() => {
     if (t) statusBar.textContent = `Tile (${t.x}, ${t.z}) L${t.level}  |  ${renderer.scene.currentMapName ?? ''}`
   }
 
-  miniMap.render(renderer.scene.mapData, worldBuilder.floTypes, sidebar.currentLevel)
+  const regions = renderer.scene.regions
+    ?? (renderer.scene.mapData ? [{ mapData: renderer.scene.mapData, originX: 0, originZ: 0 }] : null)
+  miniMap.render(regions, worldBuilder.floTypes, sidebar.currentLevel)
 }, 100)
 
 console.log('Lost City Map Editor — renderer started')

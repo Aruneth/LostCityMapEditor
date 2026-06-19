@@ -8,7 +8,8 @@ export class Triangle {
     isModel = false,
     tileX, tileZ, level, shape, rotation,
     vertices,           // Float32Array or [x1,y1,z1, x2,y2,z2, x3,y3,z3]
-    colors,             // [r1, r2, r3] — packed RGB integers
+    colors,             // [r1, r2, r3] — packed HSL-16 values
+    rawColor = null,    // [r, g, b] in 0-1, bypasses colourTable lookup
     textureId = -1,
     textureCoordinates = null,  // Float32Array or [u1,v1, u2,v2, u3,v3] | null
   }) {
@@ -20,13 +21,15 @@ export class Triangle {
     this.rotation           = rotation
     this.vertices           = vertices
     this.colors             = colors
+    this.rawColor           = rawColor
     this.textureId          = textureId
     this.textureCoordinates = textureCoordinates
   }
 
   // Returns false for triangles the engine marks as invisible.
   isVisible() {
-    return this.colors[0] !== SKIP_COLOR
+    if (this.rawColor) return true
+    return !this.colors || this.colors[0] !== SKIP_COLOR
   }
 }
 

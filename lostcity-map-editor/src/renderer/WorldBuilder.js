@@ -180,7 +180,7 @@ export function buildFloTypes(assetStore) {
 
 // ── Heightmap ─────────────────────────────────────────────────────────────────
 
-function buildHeightmap(mapData) {
+function buildHeightmap(mapData, neighborMaps = {}) {
   const hm = []
   for (let level = 0; level < 4; level++) {
     hm[level] = []
@@ -190,6 +190,25 @@ function buildHeightmap(mapData) {
         const tile = mapData.mapTiles[level]?.[x]?.[z]
         hm[level][x][z] = tile?.height ?? 0
       }
+    }
+    // Stitch east border column (x=64) from east neighbor's first column (x=0).
+    if (neighborMaps.east) {
+      for (let z = 0; z <= MAX_TILES; z++) {
+        const tile = neighborMaps.east.mapTiles[level]?.[0]?.[z]
+        hm[level][MAX_TILES][z] = tile?.height ?? 0
+      }
+    }
+    // Stitch north border row (z=64) from north neighbor's first row (z=0).
+    if (neighborMaps.north) {
+      for (let x = 0; x <= MAX_TILES; x++) {
+        const tile = neighborMaps.north.mapTiles[level]?.[x]?.[0]
+        hm[level][x][MAX_TILES] = tile?.height ?? 0
+      }
+    }
+    // Stitch northeast corner (64,64) from northeast neighbor's (0,0).
+    if (neighborMaps.northeast) {
+      const tile = neighborMaps.northeast.mapTiles[level]?.[0]?.[0]
+      hm[level][MAX_TILES][MAX_TILES] = tile?.height ?? 0
     }
   }
   return hm
@@ -810,10 +829,10 @@ export class WorldBuilder {
   // Converts MapData → Triangle[] for the given display level.
   // Pass level = -1 to render all four levels simultaneously.
   // options: { showLocs, showNpcs, showObjs } — all default true.
-  buildGeometry(mapData, assetStore, level, options = {}) {
+  buildGeometry(mapData, assetStore, level, options = {}, neighborMaps = {}) {
     if (!this._floTypes) this.initFloTypes(assetStore)
 
-    const heightmap = buildHeightmap(mapData)
+    const heightmap = buildHeightmap(mapData, neighborMaps)
     const triangles = []
     const levels    = level === -1 ? [0, 1, 2, 3] : [level]
 

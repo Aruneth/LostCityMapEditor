@@ -201,7 +201,7 @@ export class Renderer {
 
     // Upload hover uniform — -1.0 means nothing hovered.
     const h = this.scene.hoveredTile
-    gl.uniform1f(shaderManager.uniforms.uHoveredTileXZ, h ? h.x * 64 + h.z : -1.0)
+    gl.uniform1f(shaderManager.uniforms.uHoveredTileXZ, h ? h.x * 1024 + h.z : -1.0)
 
     // Draw each texture group (one VAO per texture — see VertexDataHandler).
     for (const [_texId, { vao, count, glTexture }] of scene.vaoGroups) {

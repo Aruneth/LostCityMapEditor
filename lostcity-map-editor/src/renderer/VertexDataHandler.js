@@ -43,8 +43,12 @@ export function uploadTriangles(gl, triangles) {
         data[di++] = tri.vertices[v * 3 + 1]
         data[di++] = tri.vertices[v * 3 + 2]
 
-        // Color — look up packed HSL in the colour table → extract R/G/B floats.
-        if (tri.colors != null) {
+        // Color — rawColor bypasses colourTable; otherwise look up packed HSL-16.
+        if (tri.rawColor) {
+          data[di++] = tri.rawColor[0]
+          data[di++] = tri.rawColor[1]
+          data[di++] = tri.rawColor[2]
+        } else if (tri.colors != null) {
           const hsl = tri.colors[v]
           const rgb = (hsl >= 0 && hsl < colourTable.length) ? colourTable[hsl] : 0
           data[di++] = ((rgb >> 16) & 0xFF) / 255.0
@@ -70,8 +74,8 @@ export function uploadTriangles(gl, triangles) {
         // useTexture flag
         data[di++] = hasTex ? 1.0 : 0.0
 
-        // aTileXZ — packed tile address (tileX * 64 + tileZ); used by hover highlight in shader.
-        data[di++] = tri.tileX * 64 + tri.tileZ
+        // aTileXZ — packed tile address; multiplier 1024 avoids collisions for world coords up to 1023.
+        data[di++] = tri.tileX * 1024 + tri.tileZ
       }
     }
 
