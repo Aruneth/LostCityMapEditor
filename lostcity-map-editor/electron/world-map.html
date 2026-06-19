@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>World Map</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: monospace;
+      font-size: 11px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #header {
+      padding: 6px 12px;
+      background: #252525;
+      border-bottom: 1px solid #3a3a3a;
+      color: #888;
+      flex-shrink: 0;
+    }
+
+    #scroll {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+    }
+
+    #grid {
+      display: inline-grid;
+      gap: 2px;
+    }
+
+    .axis-label {
+      width: 64px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #444;
+      font-size: 9px;
+    }
+    .axis-label.row {
+      width: 28px;
+      height: 64px;
+    }
+
+    /* Empty cell */
+    .cell {
+      width: 64px;
+      height: 64px;
+      background: #181818;
+      border: 1px solid #1e1e1e;
+    }
+
+    /* Cell with a map */
+    .cell.has-map {
+      position: relative;
+      border: 1px solid #3a5a3a;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .cell.has-map canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      image-rendering: pixelated;
+    }
+
+    .cell-coords {
+      position: absolute;
+      bottom: 2px;
+      left: 3px;
+      font-size: 8px;
+      color: rgba(255, 255, 255, 0.75);
+      text-shadow: 0 0 3px #000, 1px 1px 0 #000;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .cell.has-map:hover {
+      border-color: #7aaa3a;
+      z-index: 2;
+      outline: 1px solid #7aaa3a;
+    }
+
+    .cell.has-map.current {
+      border-color: #c0e870;
+      outline: 1px solid #c0e870;
+    }
+
+    #status {
+      padding: 4px 12px;
+      background: #1a2a1a;
+      border-top: 1px solid #3a3a3a;
+      color: #668866;
+      font-size: 11px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">World Map &mdash; dubbelklik om een map te openen &nbsp;|&nbsp; F2 om te sluiten</div>
+  <div id="scroll">
+    <div id="grid"></div>
+  </div>
+  <div id="status">Laden…</div>
+
+  <script>
+    async function init() {
+      const status = document.getElementById('status')
+      const grid   = document.getElementById('grid')
+
+      const maps = await window.electronAPI.getMapList()
+
+      if (!maps || !maps.length) {
+        status.textContent = 'Geen server geladen — open eerst een server-directory in de editor.'
+        return
+      }
+
+      // Parse filenames like m50_50.jm2
+      const entries = maps.map(name => {
+        const m = name.match(/^m(\d+)_(\d+)\.jm2$/i)
+        return m ? { name, x: parseInt(m[1], 10), z: parseInt(m[2], 10) } : null
+      }).filter(Boolean)
+
+      if (!entries.length) {
+        status.textContent = 'Geen geldige .jm2 bestanden gevonden.'
+        return
+      }
+
+      const xs = entries.map(e => e.x)
+      const zs = entries.map(e => e.z)
+      const minX = Math.min(...xs), maxX = Math.max(...xs)
+      const minZ = Math.min(...zs), maxZ = Math.max(...zs)
+      const cols = maxX - minX + 1
+      const rows = maxZ - minZ + 1
+
+      // Build lookup: "x_z" → name
+      const byCoord = {}
+      entries.forEach(e => { byCoord[`${e.x}_${e.z}`] = e.name })
+
+      // Grid column template: gutter + one column per X
+      grid.style.gridTemplateColumns = `28px repeat(${cols}, 64px)`
+
+      // Column header (X axis labels)
+      grid.appendChild(makeDiv('axis-label'))
+      for (let x = minX; x <= maxX; x++) {
+        const lbl = makeDiv('axis-label')
+        lbl.textContent = x
+        grid.appendChild(lbl)
+      }
+
+      // Data rows — high Z = north = top
+      const mapCells = []   // { cell, canvas, mapName } — collected for minimap loading
+      for (let z = maxZ; z >= minZ; z--) {
+        const rowLbl = makeDiv('axis-label row')
+        rowLbl.textContent = z
+        grid.appendChild(rowLbl)
+
+        for (let x = minX; x <= maxX; x++) {
+          const mapName = byCoord[`${x}_${z}`]
+          if (mapName) {
+            const cell   = makeDiv('cell has-map')
+            const canvas = document.createElement('canvas')
+            canvas.width = 64; canvas.height = 64
+            const coordSpan = document.createElement('span')
+            coordSpan.className = 'cell-coords'
+            coordSpan.textContent = `${x},${z}`
+            cell.appendChild(canvas)
+            cell.appendChild(coordSpan)
+            cell.title = mapName
+
+            cell.addEventListener('click',    () => { status.textContent = mapName })
+            cell.addEventListener('dblclick', () => {
+              document.querySelectorAll('.cell.current').forEach(c => c.classList.remove('current'))
+              cell.classList.add('current')
+              status.textContent = `Openen: ${mapName}`
+              window.electronAPI.openMap(mapName)
+            })
+
+            grid.appendChild(cell)
+            mapCells.push({ cell, canvas, mapName })
+          } else {
+            grid.appendChild(makeDiv('cell'))
+          }
+        }
+      }
+
+      status.textContent = `${entries.length} maps gevonden, minimaps laden…`
+
+      // Load minimaps in batches of 20 to avoid flooding IPC
+      const BATCH = 20
+      for (let i = 0; i < mapCells.length; i += BATCH) {
+        await Promise.all(
+          mapCells.slice(i, i + BATCH).map(async ({ canvas, mapName }) => {
+            try {
+              const buf = await window.electronAPI.getMinimapColors(mapName)
+              if (!buf) return
+              const ctx = canvas.getContext('2d')
+              ctx.putImageData(new ImageData(new Uint8ClampedArray(buf), 64, 64), 0, 0)
+            } catch (e) {
+              console.warn('minimap load failed:', mapName, e)
+            }
+          })
+        )
+        status.textContent =
+          `Minimaps laden… ${Math.min(i + BATCH, mapCells.length)} / ${mapCells.length}`
+      }
+
+      status.textContent =
+        `${entries.length} maps  │  ${cols}×${rows} grid  │  dubbelklik om te openen`
+    }
+
+    function makeDiv(className) {
+      const d = document.createElement('div')
+      d.className = className
+      return d
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'F2') window.close()
+    })
+
+    init().catch(err => {
+      document.getElementById('status').textContent = 'Fout: ' + err.message
+      console.error(err)
+    })
+  </script>
+</body>
+</html>

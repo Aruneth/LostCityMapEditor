@@ -67,6 +67,7 @@ export class Sidebar {
         <h3>File</h3>
         <button class="action" id="btn-save-map">Save Map</button>
         <button class="action" id="btn-export-map" style="margin-top:4px">Export As…</button>
+        <button class="action" id="btn-world-map" style="margin-top:4px">World Map  [F2]</button>
       </div>
 
       <div id="loader-status" class="placeholder" style="margin-top:8px;font-size:11px"></div>
@@ -90,6 +91,7 @@ export class Sidebar {
 
     document.getElementById('btn-save-map').addEventListener('click',   () => this._saveMap(false))
     document.getElementById('btn-export-map').addEventListener('click', () => this._saveMap(true))
+    document.getElementById('btn-world-map').addEventListener('click',  () => window.electronAPI?.openWorldMap?.())
   }
 
   _bindProgressListener() {
@@ -105,6 +107,8 @@ export class Sidebar {
 
     document.getElementById('server-dir-label').textContent = assetStore.serverDir
     document.getElementById('loader-status').textContent = ''
+
+    window.electronAPI?.setServerDir?.(assetStore.serverDir)
 
     await this._populateMapList()
 
@@ -145,6 +149,17 @@ export class Sidebar {
     } catch (e) {
       console.error('Failed to load map:', e)
       this._setStatus(`Error loading ${name}`)
+    }
+  }
+
+  // Load a map by name from outside (e.g. world map window).
+  loadMap(name) {
+    const select = document.getElementById('map-select')
+    if (!select) return
+    const opt = Array.from(select.options).find(o => o.value === name)
+    if (opt) {
+      select.value = name
+      this._loadSelectedMap()
     }
   }
 

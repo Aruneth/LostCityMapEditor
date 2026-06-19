@@ -70,6 +70,9 @@ const modelViewer = new ModelViewer(document.getElementById('modelPreviewCanvas'
 
 const sidebar = new Sidebar(renderer)
 
+// Load a map when the world map window double-clicks a region.
+window.electronAPI?.onLoadMap?.(name => sidebar.loadMap(name))
+
 // Right sidebar: TileInspector + EntityInspector, wired to renderer events.
 const tileMount   = document.getElementById('tile-inspector-mount')
 const entityMount = document.getElementById('entity-inspector-mount')
@@ -179,6 +182,11 @@ window.addEventListener('keydown', e => {
     undoStack.save(mapData)
     const pasted = clipboard.paste(hovered.x, hovered.z, sidebar.editLevel, mapData)
     if (pasted) sidebar.rebuildScene()
+  }
+
+  if (e.key === 'F2') {
+    window.electronAPI?.openWorldMap?.()
+    return
   }
 
   if (e.key === 'Escape') {
