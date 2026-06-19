@@ -8,6 +8,7 @@ import { MiniMap }               from './ui/MiniMap.js'
 import { Sidebar }               from './ui/Sidebar.js'
 import { TileInspector }         from './ui/TileInspector.js'
 import { EntityInspector }       from './ui/EntityInspector.js'
+import { LocPanel }              from './ui/LocPanel.js'
 import { NpcPanel }              from './ui/NpcPanel.js'
 import { ObjPanel }              from './ui/ObjPanel.js'
 import { assetStore }            from './loaders/AssetStore.js'
@@ -30,6 +31,7 @@ document.querySelectorAll('#tab-bar .tab').forEach(btn => {
                                 : document.getElementById(`tab-panel-${tab}`)
     if (panel) panel.classList.add('active')
     // Cancel any active add/move mode when leaving a tab
+    locPanel.exitMoveMode(); locPanel.exitAddMode()
     npcPanel.exitMoveMode(); npcPanel.exitAddMode()
     objPanel.exitMoveMode(); objPanel.exitAddMode()
   })
@@ -113,6 +115,7 @@ window.addEventListener('map:loaded', e => {
   const pz = e.detail?.primaryOriginZ ?? 0
   camera.position[0] = (px + 32) * 128
   camera.position[2] = (pz + 32) * 128
+  locPanel.refresh(renderer.scene.mapData, assetStore)
   npcPanel.refresh(renderer.scene.mapData, assetStore)
   objPanel.refresh(renderer.scene.mapData, assetStore)
 })
@@ -124,8 +127,19 @@ let lastObjId = 0
 
 window.addEventListener('editor:entityChanged', () => {
   sidebar.rebuildScene()
+  locPanel.refresh(renderer.scene.mapData, assetStore)
   npcPanel.refresh(renderer.scene.mapData, assetStore)
   objPanel.refresh(renderer.scene.mapData, assetStore)
+})
+
+window.addEventListener('locpanel:apply', e => {
+  const { loc, x, z, level, shape, rotation } = e.detail
+  const { mapData } = renderer.scene
+  if (!mapData) return
+  undoStack.save(mapData)
+  loc.x = x; loc.z = z; loc.level = level; loc.shape = shape; loc.rotation = rotation
+  locPanel.refresh(mapData, assetStore)
+  sidebar.rebuildScene()
 })
 
 window.addEventListener('npcpanel:move', e => {
@@ -168,6 +182,7 @@ window.addEventListener('editor:entityRemoved', (e) => {
   else if (type === 'obj') target.objects = target.objects.filter(o => o !== entity)
   entityInspector.show(null, null)
   modelViewer.clear()
+  if (type === 'loc') locPanel.refresh(primary, assetStore)
   if (type === 'npc') npcPanel.refresh(primary, assetStore)
   if (type === 'obj') objPanel.refresh(primary, assetStore)
   sidebar.rebuildScene()
@@ -206,10 +221,9 @@ window.addEventListener('keydown', e => {
   }
 
   if (e.key === 'Escape') {
-    npcPanel.exitMoveMode()
-    npcPanel.exitAddMode()
-    objPanel.exitMoveMode()
-    objPanel.exitAddMode()
+    locPanel.exitMoveMode(); locPanel.exitAddMode()
+    npcPanel.exitMoveMode(); npcPanel.exitAddMode()
+    objPanel.exitMoveMode(); objPanel.exitAddMode()
   }
 
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
@@ -224,6 +238,7 @@ window.addEventListener('keydown', e => {
   }
 })
 
+const locPanel = new LocPanel(document.getElementById('tab-panel-locs'))
 const npcPanel = new NpcPanel(document.getElementById('tab-panel-npcs'))
 const objPanel = new ObjPanel(document.getElementById('tab-panel-objs'))
 
@@ -259,6 +274,27 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
 
   // Primary mapData is the one we edit and save.
   const primaryMapData = renderer.scene.mapData
+
+  // LocPanel add mode: place a new LOC in whichever region was clicked.
+  if (locPanel.addMode) {
+    if (isPrimary) undoStack.save(primaryMapData)
+    mapData.locations.push(new LocData(editLevel, localX, localZ, locPanel.addLocId, locPanel.addShape))
+    locPanel.refresh(primaryMapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
+
+  // LocPanel move mode: only move within the same region.
+  if (locPanel.moveMode && locPanel.selectedLoc) {
+    if (!isPrimary) return
+    const loc = locPanel.selectedLoc
+    undoStack.save(primaryMapData)
+    loc.x = localX; loc.z = localZ; loc.level = editLevel
+    locPanel.exitMoveMode()
+    locPanel.refresh(primaryMapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
 
   // ObjPanel add mode: place a new OBJ in whichever region was clicked.
   if (objPanel.addMode) {
@@ -336,10 +372,13 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   // Entity interaction only for primary region.
   if (!isPrimary) { entityInspector.show(null, null); modelViewer.clear(); return }
 
-  const loc = mapData.locations?.find(e => e.x === localX && e.z === localZ && e.level === inspectLevel)
+  const locsHere = mapData.locations?.filter(e => e.x === localX && e.z === localZ && e.level === inspectLevel) ?? []
+  // Prefer non-ground-decor (shape 22) so clicking a door selects the door, not its mat.
+  const loc = locsHere.find(e => e.shape !== 22) ?? locsHere[0] ?? null
   if (loc) {
     lastLocId = loc.id
     entityInspector.show('loc', loc)
+    locPanel.selectLoc(loc)
     const modelId = resolveEntityModelId('loc', loc, assetStore)
     if (modelId != null) modelViewer.showModel(modelId, assetStore)
     else modelViewer.clear()
@@ -388,7 +427,15 @@ const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
 
-  if (objPanel.addMode) {
+  if (locPanel.addMode) {
+    const name = assetStore.locPackMap?.get(locPanel.addLocId) ?? `loc_${locPanel.addLocId}`
+    statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (locPanel.moveMode && locPanel.selectedLoc) {
+    const name = assetStore.locPackMap?.get(locPanel.selectedLoc.id) ?? `loc_${locPanel.selectedLoc.id}`
+    statusBar.textContent = `Move mode — klik op de kaart om ${name} te verplaatsen  |  Esc om te annuleren`
+    canvas.style.cursor = 'crosshair'
+  } else if (objPanel.addMode) {
     const name = assetStore.objPackMap?.get(objPanel.addObjId) ?? `obj_${objPanel.addObjId}`
     statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
     canvas.style.cursor = 'crosshair'

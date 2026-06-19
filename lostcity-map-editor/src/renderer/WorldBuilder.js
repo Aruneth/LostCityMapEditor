@@ -550,6 +550,30 @@ function buildEntityGeometry(mapData, assetStore, heightmap, level, out, options
   }
 }
 
+// Build a fast Map<srcHsl, dstHsl> from a loc's recols entry.
+function buildRecolMap(recols) {
+  if (!recols || recols.size === 0) return null
+  const map = new Map()
+  for (const [, [src, dst]] of recols) map.set(src, dst)
+  return map.size > 0 ? map : null
+}
+
+// Build a Map<srcPackId, dstPackId> from a loc's retexs entry.
+// retexs stores texture names; we reverse-look them up against texturePackMap.
+function buildRetexMap(retexs, texturePackMap) {
+  if (!retexs || retexs.size === 0) return null
+  const nameToId = new Map()
+  for (const [id, name] of texturePackMap) nameToId.set(name, id)
+  const map = new Map()
+  for (const [, [srcName, dstName]] of retexs) {
+    if (!srcName || !dstName) continue
+    const srcId = nameToId.get(srcName) ?? -1
+    const dstId = nameToId.get(dstName) ?? -1
+    if (srcId >= 0 && dstId >= 0) map.set(srcId, dstId)
+  }
+  return map.size > 0 ? map : null
+}
+
 function addLoc(loc, assetStore, heightmap, level, out) {
   const locName = assetStore.locPackMap.get(loc.id)
   if (!locName) return
@@ -594,12 +618,15 @@ function addLoc(loc, assetStore, heightmap, level, out) {
   const offsety = locData?.offsety ?? 0
   const offsetz = locData?.offsetz ?? 0
 
+  const recolMap = buildRecolMap(locData?.recols)
+  const retexMap = buildRetexMap(locData?.retexs, assetStore.texturePackMap)
+
   // yaw for diagonal centrepiece; wall decorations add their own yaw elsewhere.
   const yaw = shape === LOC_CENTREPIECE_DIAGONAL ? 256 : 0
 
   emitModelTriangles(model, rotation, sceneX, y, sceneZ, yaw,
     resizex, resizey, resizez, offsetx, offsety, offsetz,
-    loc.x, loc.z, level, out)
+    loc.x, loc.z, level, out, recolMap, retexMap)
 }
 
 function addNpc(npc, assetStore, heightmap, level, out) {
@@ -701,10 +728,13 @@ function computeModelFaceUV(vx, vy, vz, pIdx, mIdx, nIdx, ia, ib, ic) {
 }
 
 // Emit one Triangle per face of a model, applying rotation, scale, offset, and yaw.
+// recolMap: Map<srcHsl, dstHsl> — loc-level color substitutions (null if none).
+// retexMap: Map<srcPackId, dstPackId> — loc-level texture substitutions (null if none).
 function emitModelTriangles(
   model, rotation, px, py, pz, yaw,
   resizex, resizey, resizez, offsetx, offsety, offsetz,
   tileX, tileZ, level, out,
+  recolMap = null, retexMap = null,
 ) {
   const vc = model.vertexCount
   const vx = new Float32Array(vc)
@@ -784,11 +814,15 @@ function emitModelTriangles(
       lightValue = Math.max(10, Math.min(126, (LIGHT_AMBIENT + dot * 60) | 0))
     }
 
+    // Apply loc-level color/texture substitutions (recol/retex from loc configs).
+    const rawFaceColor = recolMap?.get(model.faceColors[f]) ?? model.faceColors[f]
+
     // For textured faces the color slot holds the texture ID, not an HSL value.
     // Use a neutral mid-grey (hsl=127) so the hover tint still works correctly.
     const tcIdx  = model.textureCoords?.[f] ?? -1
-    const texId  = tcIdx >= 0 ? (model.faceTextures?.[f] ?? -1) : -1
-    const rawHsl = tcIdx >= 0 ? 127 : model.faceColors[f]
+    let   texId  = tcIdx >= 0 ? (model.faceTextures?.[f] ?? -1) : -1
+    if (retexMap && texId >= 0) texId = retexMap.get(texId) ?? texId
+    const rawHsl = tcIdx >= 0 ? 127 : rawFaceColor
     const hslColor = mulHSL(rawHsl, lightValue)
 
     // UV coordinates from the P/M/N reference plane (only for textured faces).

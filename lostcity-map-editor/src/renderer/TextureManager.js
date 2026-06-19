@@ -49,26 +49,22 @@ async function loadOneTexture(gl, dirPath, textureName) {
 
 // Populates glTexture entries in vaoGroups from assetStore.texturePackMap.
 // vaoGroups: Map<texId, { vao, vbo, count, glTexture }> — modified in-place.
+// persistentCache: optional Map<texId, WebGLTexture> — already-loaded textures are
+//   applied synchronously and skipped for async loading; new textures are added to it.
 // Call this from the glQueue after uploadTriangles() completes.
-export async function loadTextures(gl, vaoGroups) {
+export async function loadTextures(gl, vaoGroups, persistentCache = null) {
   const { texturePackMap, serverDir } = assetStore
   if (!serverDir || texturePackMap.size === 0) return
 
-  // texId → WebGLTexture — reuses the same GPU texture if multiple vaoGroups share an id.
-  const texCache = new Map()
-
   for (const [texId, group] of vaoGroups) {
     if (texId < 0) continue   // untextured group — no PNG to load
-    if (texCache.has(texId)) {
-      group.glTexture = texCache.get(texId)
-      continue
-    }
+    if (group.glTexture) continue  // already applied from cache
     const textureName = texturePackMap.get(texId)
     if (!textureName) continue
     const tex = await loadOneTexture(gl, serverDir, textureName)
     if (tex) {
       group.glTexture = tex
-      texCache.set(texId, tex)
+      persistentCache?.set(texId, tex)
     }
   }
 }

@@ -3,7 +3,7 @@ import { listMaps, loadMapGrid, saveMap, exportMapAs } from '../loaders/MapDataL
 import { assetStore }                          from '../loaders/AssetStore.js'
 import { worldBuilder }                        from '../renderer/WorldBuilder.js'
 import { uploadTriangles, destroyVaoGroups }   from '../renderer/VertexDataHandler.js'
-import { loadTextures, destroyTextures }       from '../renderer/TextureManager.js'
+import { loadTextures }                         from '../renderer/TextureManager.js'
 import { Triangle }                            from '../data/Triangle.js'
 
 function _applyOriginOffset(triangles, originX, originZ) {
@@ -190,6 +190,7 @@ export class Sidebar {
     document.getElementById('loader-status').textContent = ''
 
     window.electronAPI?.setServerDir?.(assetStore.serverDir)
+    this.renderer.scene.textureCache.clear()
 
     await this._populateMapList()
 
@@ -267,8 +268,12 @@ export class Sidebar {
       showObjs: document.getElementById('toggle-objs')?.checked ?? true,
     }
     renderer.enqueue(() => {
-      destroyTextures(gl, scene.vaoGroups)
+      // Rescue existing WebGLTexture objects into the persistent cache before destroying VAOs.
+      for (const [texId, group] of scene.vaoGroups) {
+        if (texId >= 0 && group.glTexture) scene.textureCache.set(texId, group.glTexture)
+      }
       destroyVaoGroups(gl, scene.vaoGroups)
+
       const regions = scene.regions ?? [{ mapData: scene.mapData, originX: 0, originZ: 0 }]
       let allTriangles = []
       for (const region of regions) {
@@ -286,7 +291,15 @@ export class Sidebar {
       allTriangles = allTriangles.concat(_buildRegionBorders(regions))
       scene.triangles = allTriangles
       scene.vaoGroups = uploadTriangles(gl, allTriangles)
-      loadTextures(gl, scene.vaoGroups)
+
+      // Re-apply cached textures synchronously — first frame after rebuild has textures.
+      for (const [texId, group] of scene.vaoGroups) {
+        if (texId >= 0 && scene.textureCache.has(texId)) {
+          group.glTexture = scene.textureCache.get(texId)
+        }
+      }
+      // Only async-load texture IDs not yet in cache.
+      loadTextures(gl, scene.vaoGroups, scene.textureCache)
     })
   }
 
