@@ -14,7 +14,10 @@
       "Bash(New-Item -ItemType File -Force \"C:\\\\Users\\\\Jeroen\\\\Documents\\\\GitHub\\\\Aruneth\\\\LostCityMapEditor\\\\lostcity-map-editor\\\\public\\\\Data\\\\TileShapes\\\\.gitkeep\")",
       "Bash(Write-Host \"created\")",
       "PowerShell(New-Item *)",
-      "Bash(Select-Object -First 20)"
+      "Bash(Select-Object -First 20)",
+      "Bash(git -C \"C:\\\\Users\\\\Jeroen\\\\Documents\\\\GitHub\\\\Aruneth\\\\Engine-TS\" log --all --pretty=format: -- \"**maped*\")",
+      "Bash(xargs grep *)",
+      "Bash(git -C \"C:\\\\Users\\\\Jeroen\\\\Documents\\\\GitHub\\\\Aruneth\\\\Engine-TS\" show d43f842a:public/maped/maped.js)"
     ]
   }
 }

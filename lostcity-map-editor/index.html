@@ -8,7 +8,19 @@
   </head>
   <body>
     <div id="app">
-      <div id="sidebar-left"></div>
+      <div id="sidebar-left">
+        <div id="tab-bar">
+          <button class="tab active" data-tab="map">Map</button>
+          <button class="tab" data-tab="npcs">NPCs</button>
+        </div>
+        <div id="sidebar-content" class="tab-panel active"></div>
+        <div id="tab-panel-npcs" class="tab-panel">
+          <div class="placeholder" style="padding:8px">NPC spawns — coming soon</div>
+        </div>
+        <div id="sidebar-minimap-container">
+          <canvas id="minimapCanvas" width="64" height="64"></canvas>
+        </div>
+      </div>
       <canvas id="glCanvas"></canvas>
       <div id="sidebar-right">
         <canvas id="modelPreviewCanvas" width="284" height="284"></canvas>

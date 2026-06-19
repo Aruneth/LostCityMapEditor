@@ -153,7 +153,7 @@ function hslFromRgb(rgb) {
 
 // Build an array of FloType-like objects indexed by pack ID.
 // floTypes[packId] = { rgb, texture, hue, saturation, lightness, luminance, chroma, hsl, isOverlay }
-function buildFloTypes(assetStore) {
+export function buildFloTypes(assetStore) {
   const floTypes = []
 
   for (const [packId, name] of assetStore.floPackMap) {
@@ -804,6 +804,8 @@ export class WorldBuilder {
   initFloTypes(assetStore) {
     this._floTypes = buildFloTypes(assetStore)
   }
+
+  get floTypes() { return this._floTypes }
 
   // Converts MapData → Triangle[] for the given display level.
   // Pass level = -1 to render all four levels simultaneously.

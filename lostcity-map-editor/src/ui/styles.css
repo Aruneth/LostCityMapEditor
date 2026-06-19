@@ -23,8 +23,63 @@ body {
   width: 250px;
   background: #252525;
   border-right: 1px solid #3a3a3a;
-  padding: 8px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+#tab-bar .tab {
+  flex: 1;
+  padding: 6px 4px;
+  background: #1e1e1e;
+  border: none;
+  border-right: 1px solid #3a3a3a;
+  color: #888;
+  font-family: monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#tab-bar .tab:last-child {
+  border-right: none;
+}
+
+#tab-bar .tab:hover {
+  background: #2a2a2a;
+  color: #ccc;
+}
+
+#tab-bar .tab.active {
+  background: #252525;
+  color: #e0e0e0;
+  border-bottom: 2px solid #5a8a5a;
+}
+
+.tab-panel {
+  display: none;
+  flex: 1;
   overflow-y: auto;
+  padding: 8px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+#sidebar-content {
+  /* inherits from .tab-panel */
+}
+
+#sidebar-minimap-container {
+  border-top: 1px solid #3a3a3a;
+  padding: 4px;
   flex-shrink: 0;
 }
 
@@ -41,6 +96,15 @@ body {
   padding: 8px;
   overflow-y: auto;
   flex-shrink: 0;
+}
+
+#minimapCanvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  background: #222;
 }
 
 #modelPreviewCanvas {

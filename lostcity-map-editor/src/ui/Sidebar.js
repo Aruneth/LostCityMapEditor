@@ -21,7 +21,7 @@ export class Sidebar {
   }
 
   _build() {
-    const el = document.getElementById('sidebar-left')
+    const el = document.getElementById('sidebar-content')
     el.innerHTML = `
       <div class="inspector-section">
         <h3>Server</h3>

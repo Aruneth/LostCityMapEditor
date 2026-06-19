@@ -3,7 +3,8 @@ import { ShaderManager }         from './renderer/ShaderManager.js'
 import { Camera }                from './renderer/Camera.js'
 import { MousePicker }           from './renderer/MousePicker.js'
 import { ModelViewer }           from './renderer/ModelViewer.js'
-import { resolveEntityModelId }  from './renderer/WorldBuilder.js'
+import { resolveEntityModelId, worldBuilder } from './renderer/WorldBuilder.js'
+import { MiniMap }               from './ui/MiniMap.js'
 import { Sidebar }               from './ui/Sidebar.js'
 import { TileInspector }         from './ui/TileInspector.js'
 import { EntityInspector }       from './ui/EntityInspector.js'
@@ -15,6 +16,19 @@ import { OverlayData }           from './data/OverlayData.js'
 import { UnderlayData }          from './data/UnderlayData.js'
 import { Clipboard }             from './editor/Clipboard.js'
 import { UndoStack }             from './editor/UndoStack.js'
+
+// Tab switching for left sidebar
+document.querySelectorAll('#tab-bar .tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab
+    document.querySelectorAll('#tab-bar .tab').forEach(b => b.classList.remove('active'))
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+    btn.classList.add('active')
+    const panel = tab === 'map' ? document.getElementById('sidebar-content')
+                                : document.getElementById(`tab-panel-${tab}`)
+    if (panel) panel.classList.add('active')
+  })
+})
 
 const canvas   = document.getElementById('glCanvas')
 const renderer = new Renderer(canvas)
@@ -245,11 +259,22 @@ renderer.onRightClick = (keysHeld, hoveredTile) => {
   }
 }
 
-// Status bar — shows hovered tile coordinates.
+// Mini map
+const miniMap = new MiniMap(
+  document.getElementById('minimapCanvas'),
+  camera,
+  (tileX, tileZ) => {
+    camera.position[0] = tileX * 128 + 64
+    camera.position[2] = tileZ * 128 + 64
+  }
+)
+
+// Status bar + mini map — refresh at 100ms.
 const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
   if (t) statusBar.textContent = `Tile (${t.x}, ${t.z}) L${t.level}  |  ${renderer.scene.currentMapName ?? ''}`
+  miniMap.render(renderer.scene.mapData, worldBuilder.floTypes, sidebar.currentLevel)
 }, 100)
 
 console.log('Lost City Map Editor — renderer started')
