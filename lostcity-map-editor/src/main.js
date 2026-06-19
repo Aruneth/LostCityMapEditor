@@ -9,6 +9,7 @@ import { Sidebar }               from './ui/Sidebar.js'
 import { TileInspector }         from './ui/TileInspector.js'
 import { EntityInspector }       from './ui/EntityInspector.js'
 import { NpcPanel }              from './ui/NpcPanel.js'
+import { ObjPanel }              from './ui/ObjPanel.js'
 import { assetStore }            from './loaders/AssetStore.js'
 import { LocData }               from './data/LocData.js'
 import { NpcData }               from './data/NpcData.js'
@@ -28,6 +29,9 @@ document.querySelectorAll('#tab-bar .tab').forEach(btn => {
     const panel = tab === 'map' ? document.getElementById('sidebar-content')
                                 : document.getElementById(`tab-panel-${tab}`)
     if (panel) panel.classList.add('active')
+    // Cancel any active add/move mode when leaving a tab
+    npcPanel.exitMoveMode(); npcPanel.exitAddMode()
+    objPanel.exitMoveMode(); objPanel.exitAddMode()
   })
 })
 
@@ -103,6 +107,7 @@ window.addEventListener('editor:tileChanged', () => {
 
 window.addEventListener('map:loaded', () => {
   npcPanel.refresh(renderer.scene.mapData, assetStore)
+  objPanel.refresh(renderer.scene.mapData, assetStore)
 })
 
 // Entity placement: ID of the last inspected entity per type, used as default for new placements.
@@ -113,6 +118,7 @@ let lastObjId = 0
 window.addEventListener('editor:entityChanged', () => {
   sidebar.rebuildScene()
   npcPanel.refresh(renderer.scene.mapData, assetStore)
+  objPanel.refresh(renderer.scene.mapData, assetStore)
 })
 
 window.addEventListener('npcpanel:move', e => {
@@ -122,6 +128,16 @@ window.addEventListener('npcpanel:move', e => {
   undoStack.save(mapData)
   npc.x = x; npc.z = z; npc.level = level
   npcPanel.refresh(mapData, assetStore)
+  sidebar.rebuildScene()
+})
+
+window.addEventListener('objpanel:move', e => {
+  const { obj, x, z, level, count } = e.detail
+  const { mapData } = renderer.scene
+  if (!mapData) return
+  undoStack.save(mapData)
+  obj.x = x; obj.z = z; obj.level = level; obj.count = count
+  objPanel.refresh(mapData, assetStore)
   sidebar.rebuildScene()
 })
 
@@ -136,6 +152,7 @@ window.addEventListener('editor:entityRemoved', (e) => {
   entityInspector.show(null, null)
   modelViewer.clear()
   if (type === 'npc') npcPanel.refresh(mapData, assetStore)
+  if (type === 'obj') objPanel.refresh(mapData, assetStore)
   sidebar.rebuildScene()
 })
 
@@ -167,6 +184,8 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     npcPanel.exitMoveMode()
     npcPanel.exitAddMode()
+    objPanel.exitMoveMode()
+    objPanel.exitAddMode()
   }
 
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
@@ -182,6 +201,7 @@ window.addEventListener('keydown', e => {
 })
 
 const npcPanel = new NpcPanel(document.getElementById('tab-panel-npcs'))
+const objPanel = new ObjPanel(document.getElementById('tab-panel-objs'))
 
 const entityInspector = new EntityInspector(entityMount, (type, entity) => {
   // T14: Remove entity — dispatched so T14 wiring can handle undo + rebuild.
@@ -196,6 +216,26 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   const inspectLevel = hoveredTile.level ?? editLevel     // level of the clicked triangle
   const { mapData }  = renderer.scene
   const tile         = mapData.mapTiles[inspectLevel]?.[x]?.[z]
+
+  // ObjPanel add mode: place a new OBJ of the chosen type at the clicked tile.
+  if (objPanel.addMode) {
+    undoStack.save(mapData)
+    mapData.objects.push(new ObjData(editLevel, x, z, objPanel.addObjId, 1))
+    objPanel.refresh(mapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
+
+  // ObjPanel move mode: relocate the selected OBJ to the clicked tile.
+  if (objPanel.moveMode && objPanel.selectedObj) {
+    const obj = objPanel.selectedObj
+    undoStack.save(mapData)
+    obj.x = x; obj.z = z; obj.level = editLevel
+    objPanel.exitMoveMode()
+    objPanel.refresh(mapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
 
   // NpcPanel add mode: place a new NPC of the chosen type at the clicked tile.
   if (npcPanel.addMode) {
@@ -272,6 +312,7 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
   if (obj) {
     lastObjId = obj.id
     entityInspector.show('obj', obj)
+    objPanel.selectObj(obj)
     const modelId = resolveEntityModelId('obj', obj, assetStore)
     if (modelId != null) modelViewer.showModel(modelId, assetStore)
     else modelViewer.clear()
@@ -300,7 +341,15 @@ const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
 
-  if (npcPanel.addMode) {
+  if (objPanel.addMode) {
+    const name = assetStore.objPackMap?.get(objPanel.addObjId) ?? `obj_${objPanel.addObjId}`
+    statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (objPanel.moveMode && objPanel.selectedObj) {
+    const name = assetStore.objPackMap?.get(objPanel.selectedObj.id) ?? `obj_${objPanel.selectedObj.id}`
+    statusBar.textContent = `Move mode — klik op de kaart om ${name} te verplaatsen  |  Esc om te annuleren`
+    canvas.style.cursor = 'crosshair'
+  } else if (npcPanel.addMode) {
     const name = assetStore.npcPackMap?.get(npcPanel.addNpcId) ?? `npc_${npcPanel.addNpcId}`
     statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
     canvas.style.cursor = 'crosshair'
