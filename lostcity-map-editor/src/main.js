@@ -20,6 +20,79 @@ import { OverlayData }           from './data/OverlayData.js'
 import { UnderlayData }          from './data/UnderlayData.js'
 import { Clipboard }             from './editor/Clipboard.js'
 import { UndoStack }             from './editor/UndoStack.js'
+import { Prefab }                from './editor/Prefab.js'
+import { PrefabPanel }           from './ui/PrefabPanel.js'
+import { uploadPreviewTriangles, destroyPreviewVaoGroup } from './renderer/VertexDataHandler.js'
+import { Triangle }              from './data/Triangle.js'
+
+// ── Prefab preview ────────────────────────────────────────────────────────────
+
+let _prevPreviewX = -999, _prevPreviewZ = -999, _prevPreviewRot = -1
+let _selCorner1World = null   // { x, z } world tile coords set on mousedown in selectMode
+
+function buildPrefabPreviewTriangles(prefab, worldX, worldZ, rotation) {
+  const TILE  = 128
+  const LIFT  = 4
+  const COLOR = [0.15, 0.55, 1.0]
+  const { width: W, depth: D } = prefab
+  const tris = []
+  for (let rx = 0; rx < W; rx++) {
+    for (let rz = 0; rz < D; rz++) {
+      const [dx, dz] = Prefab.rotateOffset(rx, rz, W, D, rotation)
+      const wx = worldX + dx
+      const wz = worldZ + dz
+      // Get terrain height at this world tile from the loaded regions.
+      let h = LIFT
+      const hit = resolveWorldTile(wx, wz)
+      if (hit) {
+        const tile = hit.mapData?.mapTiles[0]?.[hit.localX]?.[hit.localZ]
+        h = (tile?.height ?? 0) + LIFT
+      }
+      const x0 = wx * TILE, x1 = (wx + 1) * TILE
+      const z0 = wz * TILE, z1 = (wz + 1) * TILE
+      const mk = (ax, ay, az, bx, by, bz, cx, cy, cz) => new Triangle({
+        tileX: -1, tileZ: -1, level: 0, shape: 0, rotation: 0,
+        vertices: [ax, ay, az, bx, by, bz, cx, cy, cz],
+        rawColor: COLOR, textureId: -1,
+      })
+      tris.push(mk(x0, h, z0,  x1, h, z0,  x1, h, z1))
+      tris.push(mk(x0, h, z0,  x1, h, z1,  x0, h, z1))
+    }
+  }
+  return tris
+}
+
+function buildSelectionPreviewTriangles(worldX0, worldZ0, worldX1, worldZ1) {
+  const TILE  = 128
+  const LIFT  = 4
+  const COLOR = [0.2, 0.9, 0.2]
+  const minX = Math.min(worldX0, worldX1), maxX = Math.max(worldX0, worldX1)
+  const minZ = Math.min(worldZ0, worldZ1), maxZ = Math.max(worldZ0, worldZ1)
+  const tris = []
+  for (let wx = minX; wx <= maxX; wx++) {
+    for (let wz = minZ; wz <= maxZ; wz++) {
+      let h = LIFT
+      const hit = resolveWorldTile(wx, wz)
+      if (hit) {
+        const tile = hit.mapData?.mapTiles[0]?.[hit.localX]?.[hit.localZ]
+        h = (tile?.height ?? 0) + LIFT
+      }
+      const x0 = wx * TILE, x1 = (wx + 1) * TILE
+      const z0 = wz * TILE, z1 = (wz + 1) * TILE
+      const mk = (ax, ay, az, bx, by, bz, cx, cy, cz) => new Triangle({
+        tileX: -1, tileZ: -1, level: 0, shape: 0, rotation: 0,
+        vertices: [ax, ay, az, bx, by, bz, cx, cy, cz],
+        rawColor: COLOR, textureId: -1,
+      })
+      tris.push(mk(x0, h, z0,  x1, h, z0,  x1, h, z1))
+      tris.push(mk(x0, h, z0,  x1, h, z1,  x0, h, z1))
+    }
+  }
+  return tris
+}
+
+// Invalidate preview when rotation changes so the interval rebuilds it.
+window.addEventListener('prefab:rotationChanged', () => { _prevPreviewRot = -1 })
 
 // Tab switching for left sidebar
 document.querySelectorAll('#tab-bar .tab').forEach(btn => {
@@ -122,6 +195,7 @@ window.addEventListener('map:loaded', e => {
   locPanel.refresh(renderer.scene.mapData, assetStore)
   npcPanel.refresh(renderer.scene.mapData, assetStore)
   objPanel.refresh(renderer.scene.mapData, assetStore)
+  closeBuildTool()
 })
 
 // Entity placement: ID of the last inspected entity per type, used as default for new placements.
@@ -229,6 +303,8 @@ window.addEventListener('keydown', e => {
     locPanel.exitMoveMode(); locPanel.exitAddMode()
     npcPanel.exitMoveMode(); npcPanel.exitAddMode()
     objPanel.exitMoveMode(); objPanel.exitAddMode()
+    _selCorner1World = null
+    prefabPanel.exitSelectMode(); prefabPanel.exitPlaceMode()
   }
 
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
@@ -243,10 +319,63 @@ window.addEventListener('keydown', e => {
   }
 })
 
-const tilePanel = new TilePanel(document.getElementById('tab-panel-tiles'))
-const locPanel = new LocPanel(document.getElementById('tab-panel-locs'))
-const npcPanel = new NpcPanel(document.getElementById('tab-panel-npcs'))
-const objPanel = new ObjPanel(document.getElementById('tab-panel-objs'))
+const tilePanel   = new TilePanel(document.getElementById('tab-panel-tiles'))
+const locPanel    = new LocPanel(document.getElementById('tab-panel-locs'))
+const npcPanel    = new NpcPanel(document.getElementById('tab-panel-npcs'))
+const objPanel    = new ObjPanel(document.getElementById('tab-panel-objs'))
+const prefabPanel = new PrefabPanel(document.getElementById('build-panel-prefab'))
+
+// ── Build Tool overlay (opened from Build menu) ───────────────────────────────
+
+let _buildActiveTool = null
+
+function openBuildTool(tool) {
+  const overlay = document.getElementById('build-overlay')
+  const title   = document.getElementById('build-overlay-title')
+
+  // Toggle off if already open with the same tool.
+  if (_buildActiveTool === tool && overlay.classList.contains('open')) {
+    closeBuildTool()
+    return
+  }
+
+  _buildActiveTool = tool
+  title.textContent = tool === 'prefab' ? 'Prefab' : 'Bridge Generator'
+  document.getElementById('build-panel-prefab').style.display = tool === 'prefab' ? '' : 'none'
+  document.getElementById('build-panel-bridge').style.display = tool === 'bridge' ? '' : 'none'
+  overlay.classList.add('open')
+}
+
+function closeBuildTool() {
+  document.getElementById('build-overlay')?.classList.remove('open')
+  _buildActiveTool = null
+  _selCorner1World = null
+  prefabPanel.exitSelectMode()
+  prefabPanel.exitPlaceMode()
+}
+
+document.getElementById('build-overlay-close').addEventListener('click', closeBuildTool)
+
+window.electronAPI?.onOpenBuildTool?.(tool => openBuildTool(tool))
+
+// Finalize prefab drag selection on mouseup.
+canvas.addEventListener('mouseup', e => {
+  if (e.button !== 0) return
+  if (!prefabPanel.selectMode || !prefabPanel.selectionCorner1 || !_selCorner1World) return
+  const hv = renderer.scene.hoveredTile
+  if (!hv) return
+  const hit2 = resolveWorldTile(hv.x, hv.z)
+  if (!hit2?.isPrimary) return
+  const c1 = prefabPanel.selectionCorner1
+  const prefab = Prefab.fromSelection(hit2.mapData, c1.x, c1.z, hit2.localX, hit2.localZ)
+  _selCorner1World = null
+  _prevPreviewX = _prevPreviewZ = -999
+  prefabPanel.setPrefab(prefab, null)
+  renderer.enqueue(() => {
+    destroyPreviewVaoGroup(renderer.gl, renderer.scene.previewVaoGroup)
+    renderer.scene.previewVaoGroup = null
+  })
+})
 
 const entityInspector = new EntityInspector(entityMount, (type, entity) => {
   // T14: Remove entity — dispatched so T14 wiring can handle undo + rebuild.
@@ -280,6 +409,25 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
 
   // Primary mapData is the one we edit and save.
   const primaryMapData = renderer.scene.mapData
+
+  // Prefab select mode: record start corner on mousedown (drag ends on mouseup).
+  if (prefabPanel.selectMode) {
+    if (!isPrimary) return
+    _selCorner1World = { x, z }   // world tile coords for the selection preview
+    prefabPanel.onFirstCorner(localX, localZ)
+    return
+  }
+
+  // Prefab place mode: stamp the prefab at the clicked tile (primary region only).
+  if (prefabPanel.placeMode && prefabPanel.selectedPrefab) {
+    if (!isPrimary) return
+    undoStack.save(primaryMapData)
+    prefabPanel.selectedPrefab.applyTo(mapData, localX, localZ, prefabPanel.placeRotation)
+    locPanel.refresh(primaryMapData, assetStore)
+    objPanel.refresh(primaryMapData, assetStore)
+    sidebar.rebuildScene()
+    return
+  }
 
   // TilePanel floor paint mode: replace underlay or overlay on the clicked tile.
   if (tilePanel.paintMode) {
@@ -472,7 +620,59 @@ const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
 
-  if (tilePanel.paintMode) {
+  if (prefabPanel.selectMode) {
+    canvas.style.cursor = 'crosshair'
+    if (prefabPanel.selectionCorner1 && _selCorner1World) {
+      const hv = renderer.scene.hoveredTile
+      const hx = hv?.x ?? -999, hz = hv?.z ?? -999
+      if (hx !== _prevPreviewX || hz !== _prevPreviewZ) {
+        _prevPreviewX = hx; _prevPreviewZ = hz
+        if (hx !== -999) {
+          const minX = Math.min(_selCorner1World.x, hx), maxX = Math.max(_selCorner1World.x, hx)
+          const minZ = Math.min(_selCorner1World.z, hz), maxZ = Math.max(_selCorner1World.z, hz)
+          const W = maxX - minX + 1, D = maxZ - minZ + 1
+          statusBar.textContent = `Prefab selection — ${W}×${D} tiles  |  release to confirm  |  Esc to cancel`
+          const tris = buildSelectionPreviewTriangles(_selCorner1World.x, _selCorner1World.z, hx, hz)
+          renderer.enqueue(() => {
+            destroyPreviewVaoGroup(renderer.gl, renderer.scene.previewVaoGroup)
+            renderer.scene.previewVaoGroup = tris.length ? uploadPreviewTriangles(renderer.gl, tris) : null
+          })
+        } else {
+          statusBar.textContent = `Prefab selection — drag to end point  |  Esc to cancel`
+        }
+      }
+    } else {
+      statusBar.textContent = `Prefab selection — click and drag on the map  |  Esc to cancel`
+      if (_prevPreviewX !== -999 || renderer.scene.previewVaoGroup) {
+        _prevPreviewX = _prevPreviewZ = -999
+        renderer.enqueue(() => {
+          destroyPreviewVaoGroup(renderer.gl, renderer.scene.previewVaoGroup)
+          renderer.scene.previewVaoGroup = null
+        })
+      }
+    }
+  } else if (prefabPanel.placeMode && prefabPanel.selectedPrefab) {
+    const { width: W, depth: D } = prefabPanel.selectedPrefab
+    const [rW, rD] = prefabPanel.selectedPrefab.rotatedSize(prefabPanel.placeRotation)
+    statusBar.textContent = `Place prefab (${rW}×${rD}) — click on the map  |  Esc to stop`
+    canvas.style.cursor = 'crosshair'
+    // Rebuild preview when hovered tile or rotation changes.
+    const hv = renderer.scene.hoveredTile
+    const hx = hv?.x ?? -999, hz = hv?.z ?? -999
+    const rot = prefabPanel.placeRotation
+    if (hx !== _prevPreviewX || hz !== _prevPreviewZ || rot !== _prevPreviewRot) {
+      _prevPreviewX = hx; _prevPreviewZ = hz; _prevPreviewRot = rot
+      const tris = (hx !== -999)
+        ? buildPrefabPreviewTriangles(prefabPanel.selectedPrefab, hx, hz, rot)
+        : []
+      renderer.enqueue(() => {
+        destroyPreviewVaoGroup(renderer.gl, renderer.scene.previewVaoGroup)
+        renderer.scene.previewVaoGroup = tris.length
+          ? uploadPreviewTriangles(renderer.gl, tris)
+          : null
+      })
+    }
+  } else if (tilePanel.paintMode) {
     const name = tilePanel.selectedName ?? `#${tilePanel.selectedPackId}`
     statusBar.textContent = `Paint ${tilePanel.paintType} — klik op tiles om ${name} te schilderen  |  Esc om te stoppen`
     canvas.style.cursor = 'crosshair'
@@ -509,6 +709,14 @@ setInterval(() => {
   } else {
     canvas.style.cursor = ''
     if (t) statusBar.textContent = `Tile (${t.x}, ${t.z}) L${t.level}  |  ${renderer.scene.currentMapName ?? ''}`
+    // Clear prefab preview when no mode is active.
+    if (_prevPreviewX !== -999 || renderer.scene.previewVaoGroup) {
+      _prevPreviewX = _prevPreviewZ = -999; _prevPreviewRot = -1
+      renderer.enqueue(() => {
+        destroyPreviewVaoGroup(renderer.gl, renderer.scene.previewVaoGroup)
+        renderer.scene.previewVaoGroup = null
+      })
+    }
   }
 
   const regions = renderer.scene.regions

@@ -216,5 +216,13 @@ export class Renderer {
 
     gl.bindVertexArray(null)
     gl.bindTexture(gl.TEXTURE_2D, null)
+
+    // Draw prefab placement preview overlay (no texture, drawn on top).
+    if (scene.previewVaoGroup) {
+      const { vao, count } = scene.previewVaoGroup
+      gl.bindVertexArray(vao)
+      gl.drawArrays(gl.TRIANGLES, 0, count)
+      gl.bindVertexArray(null)
+    }
   }
 }

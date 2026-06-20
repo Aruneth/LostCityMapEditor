@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMinimapColors:    (mapName) => ipcRenderer.invoke('get-minimap', mapName),
   openWorldMap:   ()     => ipcRenderer.send('open-world-map'),
   openMap:        (name) => ipcRenderer.send('open-map', name),
-  onLoadMap:      (cb)   => ipcRenderer.on('load-map', (_, name) => cb(name)),
-  onLoadRadius:   (cb)   => ipcRenderer.on('set-load-radius', (_, r) => cb(r)),
+  onLoadMap:       (cb)  => ipcRenderer.on('load-map', (_, name) => cb(name)),
+  onLoadRadius:    (cb)  => ipcRenderer.on('set-load-radius', (_, r) => cb(r)),
+  onOpenBuildTool: (cb)  => ipcRenderer.on('open-build-tool', (_, tool) => cb(tool)),
 })

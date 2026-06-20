@@ -67,6 +67,52 @@ npm run dist
 - **Minimap** — live overhead minimap with region borders; click to teleport the camera.
 - **Undo** — up to 30 steps for tile and entity edits.
 - **Save / Export** — save all loaded regions back to the server directory, or export a single region via *Export As…*
+- **Prefab system** — capture, save, load, and stamp rectangular areas of the map including tiles and objects. See [Prefab system](#prefab-system) below.
+
+---
+
+## Prefab system
+
+The prefab system lets you capture a rectangular area of the map, save it to a JSON file, and stamp it back anywhere on the primary region — with optional rotation.
+
+Open it via **Build → Prefab** in the menu bar.
+
+### Workflow
+
+1. **Select** — click *Start selection*, then click and drag on the map to define a rectangle. Release the mouse to confirm. The status bar shows the selection dimensions while you drag.
+2. **Save / Load** — optionally save the captured area to a `.json` file or load a previously saved prefab. Old version 1 files (tiles only) load without error.
+3. **Rotate** — choose 0°, 90°, 180°, or 270°. A blue overlay follows the cursor to preview the placement footprint.
+4. **Place** — click *Place prefab* to enter placement mode, then click a tile on the map. The prefab is stamped with its top-left corner at that tile. Existing tiles, LOCs, and ground items inside the footprint are cleared before stamping.
+
+### What is captured
+
+| Data | Captured | Notes |
+|---|---|---|
+| Tiles (all 4 levels) | Yes | height, underlay, overlay, shape, rotation, flags |
+| LOCs | Yes | rotated by the same angle as the prefab |
+| Ground items (OBJs) | Yes | |
+| NPCs | No | NPC spawns are not part of a prefab |
+
+### Rotation behaviour
+
+Position offsets are rotated around the prefab origin. LOC facing directions are also adjusted: `new_rotation = (original_rotation + prefab_rotation) % 4`.
+
+### File format
+
+Prefabs are stored as JSON (version 2):
+
+```json
+{
+  "version": 2,
+  "width": 5,
+  "depth": 3,
+  "tiles": { "0": { "0,0": { "height": 0, "underlayId": 1, "overlayId": -1, "shape": 0, "rotation": 0, "flag": 0 } } },
+  "locs": [ { "rx": 1, "rz": 0, "level": 0, "id": 42, "shape": 10, "rotation": 0 } ],
+  "objs": [ { "rx": 2, "rz": 1, "level": 0, "id": 7, "count": 1 } ]
+}
+```
+
+Version 1 files (tiles only, no `locs`/`objs` keys) are still accepted.
 
 ---
 

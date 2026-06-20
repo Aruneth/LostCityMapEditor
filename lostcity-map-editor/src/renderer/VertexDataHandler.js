@@ -120,3 +120,48 @@ export function destroyVaoGroups(gl, vaoGroups) {
   }
   vaoGroups.clear()
 }
+
+// Upload a flat list of preview triangles (all rawColor, no texture) to a single VAO.
+// Used for the prefab placement preview overlay.
+export function uploadPreviewTriangles(gl, triangles) {
+  if (!triangles.length) return null
+  const data = new Float32Array(triangles.length * 3 * STRIDE)
+  let di = 0
+  for (const tri of triangles) {
+    for (let v = 0; v < 3; v++) {
+      data[di++] = tri.vertices[v * 3]
+      data[di++] = tri.vertices[v * 3 + 1]
+      data[di++] = tri.vertices[v * 3 + 2]
+      data[di++] = tri.rawColor[0]
+      data[di++] = tri.rawColor[1]
+      data[di++] = tri.rawColor[2]
+      data[di++] = 0; data[di++] = 0   // UV (unused)
+      data[di++] = 0                    // useTexture = 0
+      data[di++] = tri.tileX * 1024 + tri.tileZ
+    }
+  }
+  const vao = gl.createVertexArray()
+  gl.bindVertexArray(vao)
+  const vbo = gl.createBuffer()
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW)
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, STRIDE_BYTES, 0)
+  gl.enableVertexAttribArray(0)
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, STRIDE_BYTES, 3 * 4)
+  gl.enableVertexAttribArray(1)
+  gl.vertexAttribPointer(2, 2, gl.FLOAT, false, STRIDE_BYTES, 6 * 4)
+  gl.enableVertexAttribArray(2)
+  gl.vertexAttribPointer(3, 1, gl.FLOAT, false, STRIDE_BYTES, 8 * 4)
+  gl.enableVertexAttribArray(3)
+  gl.vertexAttribPointer(4, 1, gl.FLOAT, false, STRIDE_BYTES, 9 * 4)
+  gl.enableVertexAttribArray(4)
+  gl.bindVertexArray(null)
+  gl.bindBuffer(gl.ARRAY_BUFFER, null)
+  return { vao, vbo, count: triangles.length * 3 }
+}
+
+export function destroyPreviewVaoGroup(gl, group) {
+  if (!group) return
+  if (group.vao) gl.deleteVertexArray(group.vao)
+  if (group.vbo) gl.deleteBuffer(group.vbo)
+}

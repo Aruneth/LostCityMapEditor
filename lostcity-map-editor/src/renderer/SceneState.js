@@ -8,5 +8,7 @@ export class SceneState {
     this.mapData         = null        // MapData — loaded by T04/T17
     this.currentMapName  = null        // string — the loaded .jm2 filename
     this.currentLevel    = 0           // 0–3, controlled by level selector (T11)
+    this.previewVaoGroup = null        // { vao, vbo, count } | null — prefab placement preview
+    this.regions         = null        // region array for multi-region maps
   }
 }

@@ -208,6 +208,66 @@ button.action.active {
   background: #1a1a1a;
 }
 
+/* ── Build Tool floating panel (opened from Build menu) ─────────────────────── */
+#build-overlay {
+  display: none;
+  position: fixed;
+  top: 8px;
+  left: 258px;   /* just past the left sidebar */
+  width: 270px;
+  max-height: calc(100vh - 48px);
+  background: #252525;
+  border: 1px solid #3a3a3a;
+  box-shadow: 4px 8px 24px rgba(0,0,0,0.6);
+  z-index: 200;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#build-overlay.open {
+  display: flex;
+}
+
+#build-overlay-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #3a3a3a;
+  flex-shrink: 0;
+  background: #1e1e1e;
+  cursor: default;
+}
+
+#build-overlay-title {
+  flex: 1;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: #888;
+  letter-spacing: 0.05em;
+}
+
+#build-overlay-close {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+#build-overlay-close:hover {
+  color: #ccc;
+}
+
+#build-panel-prefab,
+#build-panel-bridge {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
 .status-bar {
   position: fixed;
   bottom: 0;

@@ -38,6 +38,19 @@ function buildMenu() {
       ]
     },
     {
+      label: 'Build',
+      submenu: [
+        {
+          label: 'Prefab',
+          click: () => mainWindow?.webContents.send('open-build-tool', 'prefab')
+        },
+        {
+          label: 'Bridge Generator',
+          click: () => mainWindow?.webContents.send('open-build-tool', 'bridge')
+        },
+      ]
+    },
+    {
       label: 'Settings',
       submenu: sizes.map(([v, l]) => ({
         label: `Load size: ${l}`,
