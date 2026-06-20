@@ -65,9 +65,17 @@ export class TileInspector {
           </div>
         </div>
 
-        <div class="field-row" style="margin-top:6px">
-          <label>Flag</label>
-          <input type="number" id="ti-flag" min="0">
+        <div style="margin-top:6px">
+          <div style="color:#aaa;font-size:11px;margin-bottom:3px">Flags</div>
+          <label class="field-row" style="cursor:pointer;gap:6px">
+            <input type="checkbox" id="ti-flag-1"> <span style="color:#888;font-size:10px">0x01</span> Blocked
+          </label>
+          <label class="field-row" style="cursor:pointer;gap:6px">
+            <input type="checkbox" id="ti-flag-2"> <span style="color:#888;font-size:10px">0x02</span> Roof / bridge
+          </label>
+          <label class="field-row" style="cursor:pointer;gap:6px">
+            <input type="checkbox" id="ti-flag-16"> <span style="color:#888;font-size:10px">0x10</span> Hidden (skip render)
+          </label>
         </div>
 
         <button class="action" id="btn-apply-tile">Apply (Ctrl+Click)</button>
@@ -97,7 +105,10 @@ export class TileInspector {
     document.getElementById('ti-overlay-id').value  = tile.overlay?.id ?? -1
     document.getElementById('ti-shape').value        = tile.shape    ?? 0
     document.getElementById('ti-rotation').value     = tile.rotation ?? 0
-    document.getElementById('ti-flag').value         = tile.flag     ?? 0
+    const f = tile.flag ?? 0
+    document.getElementById('ti-flag-1').checked  = !!(f & 0x01)
+    document.getElementById('ti-flag-2').checked  = !!(f & 0x02)
+    document.getElementById('ti-flag-16').checked = !!(f & 0x10)
   }
 
   get tile() { return this._tile }
@@ -116,7 +127,9 @@ export class TileInspector {
       height:    parseInt(document.getElementById('ti-height').value,      10) || 0,
       shape:     parseInt(document.getElementById('ti-shape').value,       10),
       rotation:  parseInt(document.getElementById('ti-rotation').value,    10),
-      flag:      parseInt(document.getElementById('ti-flag').value,        10) || 0,
+      flag:      (document.getElementById('ti-flag-1').checked  ? 0x01 : 0)
+               | (document.getElementById('ti-flag-2').checked  ? 0x02 : 0)
+               | (document.getElementById('ti-flag-16').checked ? 0x10 : 0),
       underlayId: parseInt(document.getElementById('ti-underlay-id').value, 10),
       overlayId:  parseInt(document.getElementById('ti-overlay-id').value,  10),
     })

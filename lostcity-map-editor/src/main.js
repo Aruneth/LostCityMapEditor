@@ -8,6 +8,7 @@ import { MiniMap }               from './ui/MiniMap.js'
 import { Sidebar }               from './ui/Sidebar.js'
 import { TileInspector }         from './ui/TileInspector.js'
 import { EntityInspector }       from './ui/EntityInspector.js'
+import { TilePanel }             from './ui/TilePanel.js'
 import { LocPanel }              from './ui/LocPanel.js'
 import { NpcPanel }              from './ui/NpcPanel.js'
 import { ObjPanel }              from './ui/ObjPanel.js'
@@ -30,7 +31,8 @@ document.querySelectorAll('#tab-bar .tab').forEach(btn => {
     const panel = tab === 'map' ? document.getElementById('sidebar-content')
                                 : document.getElementById(`tab-panel-${tab}`)
     if (panel) panel.classList.add('active')
-    // Cancel any active add/move mode when leaving a tab
+    // Cancel any active add/move/paint mode when leaving a tab
+    tilePanel.exitPaintMode()
     locPanel.exitMoveMode(); locPanel.exitAddMode()
     npcPanel.exitMoveMode(); npcPanel.exitAddMode()
     objPanel.exitMoveMode(); objPanel.exitAddMode()
@@ -115,6 +117,8 @@ window.addEventListener('map:loaded', e => {
   const pz = e.detail?.primaryOriginZ ?? 0
   camera.position[0] = (px + 32) * 128
   camera.position[2] = (pz + 32) * 128
+  tilePanel.refresh(assetStore, worldBuilder.floTypes)
+  tilePanel.showTile(null)
   locPanel.refresh(renderer.scene.mapData, assetStore)
   npcPanel.refresh(renderer.scene.mapData, assetStore)
   objPanel.refresh(renderer.scene.mapData, assetStore)
@@ -221,6 +225,7 @@ window.addEventListener('keydown', e => {
   }
 
   if (e.key === 'Escape') {
+    tilePanel.exitPaintMode()
     locPanel.exitMoveMode(); locPanel.exitAddMode()
     npcPanel.exitMoveMode(); npcPanel.exitAddMode()
     objPanel.exitMoveMode(); objPanel.exitAddMode()
@@ -238,6 +243,7 @@ window.addEventListener('keydown', e => {
   }
 })
 
+const tilePanel = new TilePanel(document.getElementById('tab-panel-tiles'))
 const locPanel = new LocPanel(document.getElementById('tab-panel-locs'))
 const npcPanel = new NpcPanel(document.getElementById('tab-panel-npcs'))
 const objPanel = new ObjPanel(document.getElementById('tab-panel-objs'))
@@ -274,6 +280,44 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
 
   // Primary mapData is the one we edit and save.
   const primaryMapData = renderer.scene.mapData
+
+  // TilePanel floor paint mode: replace underlay or overlay on the clicked tile.
+  if (tilePanel.paintMode) {
+    const t = mapData?.mapTiles[editLevel]?.[localX]?.[localZ]
+    if (!t) return
+    if (isPrimary) undoStack.save(primaryMapData)
+    if (tilePanel.paintType === 'underlay') {
+      if (!t.underlay) t.underlay = new UnderlayData(0)
+      t.underlay.id = tilePanel.selectedPackId + 1   // underlay IDs are 1-indexed
+    } else {
+      if (!t.overlay) t.overlay = new OverlayData(0)
+      t.overlay.id = tilePanel.selectedPackId         // overlay IDs are 0-indexed
+      t.shape      = tilePanel.paintShape
+      t.rotation   = tilePanel.paintRotation
+    }
+    sidebar.rebuildScene()
+    return
+  }
+
+  // TilePanel height paint mode: set height on the clicked tile.
+  if (tilePanel.heightPaintMode) {
+    const t = mapData?.mapTiles[editLevel]?.[localX]?.[localZ]
+    if (!t) return
+    if (isPrimary) undoStack.save(primaryMapData)
+    t.height = tilePanel.paintHeight
+    sidebar.rebuildScene()
+    return
+  }
+
+  // TilePanel flag paint mode: overwrite flags on the clicked tile.
+  if (tilePanel.flagPaintMode) {
+    const t = mapData?.mapTiles[editLevel]?.[localX]?.[localZ]
+    if (!t) return
+    if (isPrimary) undoStack.save(primaryMapData)
+    t.flag = tilePanel.paintFlags
+    sidebar.rebuildScene()
+    return
+  }
 
   // LocPanel add mode: place a new LOC in whichever region was clicked.
   if (locPanel.addMode) {
@@ -368,6 +412,7 @@ renderer.onLeftClick = (keysHeld, hoveredTile) => {
 
   // Plain click: inspect tile and any entity at this position.
   tileInspector.show(tile ?? null)
+  tilePanel.showTile(tile ?? null)
 
   // Entity interaction only for primary region.
   if (!isPrimary) { entityInspector.show(null, null); modelViewer.clear(); return }
@@ -427,7 +472,17 @@ const statusBar = document.getElementById('status-bar')
 setInterval(() => {
   const t = renderer.scene.hoveredTile
 
-  if (locPanel.addMode) {
+  if (tilePanel.paintMode) {
+    const name = tilePanel.selectedName ?? `#${tilePanel.selectedPackId}`
+    statusBar.textContent = `Paint ${tilePanel.paintType} — klik op tiles om ${name} te schilderen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (tilePanel.heightPaintMode) {
+    statusBar.textContent = `Paint height ${tilePanel.paintHeight} — klik op tiles om hoogte in te stellen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (tilePanel.flagPaintMode) {
+    statusBar.textContent = `Paint flags 0x${tilePanel.paintFlags.toString(16)} — klik op tiles om flags in te stellen  |  Esc om te stoppen`
+    canvas.style.cursor = 'crosshair'
+  } else if (locPanel.addMode) {
     const name = assetStore.locPackMap?.get(locPanel.addLocId) ?? `loc_${locPanel.addLocId}`
     statusBar.textContent = `Add mode — klik op de kaart om ${name} te plaatsen  |  Esc om te stoppen`
     canvas.style.cursor = 'crosshair'
